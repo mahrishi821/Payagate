@@ -1,14 +1,18 @@
 from rest_framework.views import APIView
+from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.exceptions import TokenError
 from .models import Merchant,User , Order, Payment
 from ratelimit.decorators import ratelimit
 from .serializers import MerchantSerializer, UserSerializer , CustomTokenObtainPairSerializer , OrderSerializer, PaymentSerializer
 from .jsonResponse.response import JSONResponseSender
 from django.utils.decorators import method_decorator
 from .services import WebhookHandler, PaymentProcessor
-from django.db.models import Count, Q
+from rest_framework.decorators import action
+from django.db.models import Count, Q, Sum
+from .utils.permissions import IsMerchantUser
 import uuid
 
 
@@ -37,7 +41,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
                 value=refresh_token,
                 httponly=True,
                 secure=getattr(request, 'is_secure', False),  # Secure in production
-                samesite='Strict',
+                samesite='None',
                 max_age=7*24*60*60  # 7 days
             )
             return response
@@ -139,21 +143,31 @@ class CustomTokenRefreshView(TokenRefreshView):
     def post(self, request, *args, **kwargs):
         refresh_token = request.COOKIES.get('refresh_token')
         if not refresh_token:
-            return (JSONResponseSender
-                .send_error(
-                400,
-                    'No valid refresh token found in cookie.',
-                    'no_refresh_token'
-            ))
+            return JSONResponseSender.send_error(
+                code=400,
+                message='No valid refresh token found in cookie.',
+                description='no_refresh_token',
+                status=400
+            )
         try:
             # Create a serializer instance with the refresh token from cookie
             serializer = self.get_serializer(data={'refresh': refresh_token})
             serializer.is_valid(raise_exception=True)
             return JSONResponseSender.send_success(serializer.validated_data)
         except TokenError as e:
-            return JSONResponseSender.send_error("401", str(e),'token_not_valid')
+            return JSONResponseSender.send_error(
+                code=401,
+                message=str(e),
+                description='token_not_valid',
+                status=401
+            )
         except Exception as e:
-            return JSONResponseSender.send_error("400", str(e),'token_not_valid')
+            return JSONResponseSender.send_error(
+                code=400,
+                message=str(e),
+                description='token_not_valid',
+                status=400
+            )
 
 
 class LogoutView(APIView):
@@ -244,25 +258,65 @@ class OrderCreateView(APIView):
             )
 
 
-class PaymentProcessView(APIView):
+class InProgressOrdersView(APIView):
     permission_classes = [IsAuthenticated]
 
-    @method_decorator(ratelimit(key='ip', rate='5/m', block=True, method='POST'), name='dispatch')
-    def post(self, request):
+    def get(self, request):
+        """Return list of only order_id for orders with status='created'"""
         try:
             merchant = Merchant.objects.get(user=request.user)
+            order_ids = (
+                Order.objects.filter(merchant=merchant, status='created')
+                .order_by('-created_at')
+                .values_list('order_id', flat=True)
+            )
+
+            return JSONResponseSender.send_success(
+                data=list(order_ids),
+                message='In-progress order IDs retrieved successfully',
+                )
+
         except Merchant.DoesNotExist:
             return JSONResponseSender.send_error(
-                code=1010,
+                code=1007,
                 message='Unauthorized',
                 description='User is not a merchant',
                 status=403
             )
+        except Exception as e:
+            return JSONResponseSender.send_error("500", str(e), str(e))
+
+class CompletedPaymentView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            merchant = Merchant.objects.get(user=request.user)
+            # payment_id = (
+            #     Payment.objects.filter(order__merchant=merchant, status='captured').order_by('-created_at').values_list('payment_id', flat=True)
+            # )
+            payments = (
+                Payment.objects.filter(order__merchant=merchant, status='captured').order_by('-created_at')
+            )
+            serializer = PaymentSerializer(payments, many=True)
+            return JSONResponseSender.send_success(serializer.data, message='Payment completed successfully')
+        except Exception as e:
+            return JSONResponseSender.send_error("500", str(e), str(e))
+
+class PaymentProcessView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    # @method_decorator(ratelimit(key='ip', rate='5/m', block=True, method='POST'), name='dispatch')
+    def post(self, request):
+
         order_id = request.data.get('order_id')
         card_details = request.data.get('card_details', {})
+
         try:
+            merchant = Merchant.objects.get(user=request.user)
             order = Order.objects.get(order_id=order_id, merchant=merchant)
             payment, success = PaymentProcessor.process_payment(order, card_details)
+
             if not payment:
                 return JSONResponseSender.send_error(
                     code=1011,
@@ -270,10 +324,13 @@ class PaymentProcessView(APIView):
                     description='Invalid card details',
                     status=400
                 )
-            if success:
+
+            if success and payment.status=='captured':
                 order.status = 'paid'
                 order.save()
                 WebhookHandler.send_webhook(payment, merchant)
+            elif success:
+                order.status = 'In-process'
             else:
                 order.status = 'failed'
                 order.save()
@@ -291,7 +348,8 @@ class PaymentProcessView(APIView):
                 status=404
             )
         except Exception as e:
-            return JSONResponseSender.send_error("1015",str(e),str(e))
+            print(str(e))
+            return JSONResponseSender.send_error("500",str(e),str(e))
 
 
 class RefundProcessView(APIView):
@@ -299,6 +357,7 @@ class RefundProcessView(APIView):
 
     @method_decorator(ratelimit(key='ip', rate='5/m', block=True, method='POST'), name='dispatch')
     def post(self, request):
+
         try:
             merchant = Merchant.objects.get(user=request.user)
         except Merchant.DoesNotExist:
@@ -332,10 +391,12 @@ class RefundProcessView(APIView):
                 status=404
             )
 
+
+
 class AdminStatsView(APIView):
     permission_classes = [IsAdminUser]
 
-    @method_decorator(ratelimit(key='ip', rate='5/m', block=True, method='POST'), name='dispatch')
+    # @method_decorator(ratelimit(key='ip', rate='5/m', block=True, method='POST'), name='dispatch')
     def get(self, request):
         try:
             merchant_id = request.query_params.get('merchant_id')
@@ -355,6 +416,12 @@ class AdminStatsView(APIView):
                 # Filter metrics by merchant_id
                 total_orders = Order.objects.filter(merchant=merchant).count()
                 total_successful_payments = Payment.objects.filter(
+                    order__merchant=merchant, status__in=['captured']
+                ).count()
+                total_captured_payments = Payment.objects.filter(
+                    order__merchant=merchant, status='captured'
+                ).count()
+                total_authorized_payments = Payment.objects.filter(
                     order__merchant=merchant, status='authorized'
                 ).count()
                 total_successful_refunds = Payment.objects.filter(
@@ -370,32 +437,43 @@ class AdminStatsView(APIView):
                         'order_count': total_orders,
                         'payment_count': total_successful_payments,
                         'successful_payments': total_successful_payments,
+                        'authorized_payments': total_authorized_payments,
+                        'captured_payments': total_captured_payments,
                         'successful_refunds': total_successful_refunds,
                         'canceled_payments': total_canceled_payments
                     }
                 )
             else:
+                total_merchants = Merchant.objects.count()
+                total_admins = User.objects.filter(is_staff=True).count()
+                total_commission = Payment.objects.aggregate(total=Sum('commission_amount'))['total'] or 0
                 total_orders = Order.objects.count()
-                total_successful_payments = Payment.objects.filter(status='authorized').count()
+                total_successful_payments = Payment.objects.filter(status__in=['captured','refunded']).count()
+                total_captured_payments = Payment.objects.filter(status='captured').count()
+                total_authorized_payments = Payment.objects.filter(status='authorized').count()
                 total_successful_refunds = Payment.objects.filter(status='refunded').count()
                 total_canceled_payments = Payment.objects.filter(status='failed').count()
-
+                return JSONResponseSender.send_success(
+                    data={
+                        'total_merchants': total_merchants,
+                        'total_admins': total_admins,
+                        'total_orders': total_orders,
+                        'total_commission': total_commission,
+                        'total_successful_payments': total_successful_payments,
+                        'total_authorized_payments': total_authorized_payments,
+                        'total_captured_payments': total_captured_payments,
+                        'total_successful_refunds': total_successful_refunds,
+                        'total_canceled_payments': total_canceled_payments,
+                    },
+                    message='Admin statistics retrieved successfully',
+                    status=200
+                )
             # Common metrics (not merchant-specific)
-            total_merchants = Merchant.objects.count()
-            total_admins = User.objects.filter(is_staff=True).count()
 
-            return JSONResponseSender.send_success(
-                data={
-                    'total_merchants': total_merchants,
-                    'total_admins': total_admins,
-                    'total_orders': total_orders,
-                    'total_successful_payments': total_successful_payments,
-                    'total_successful_refunds': total_successful_refunds,
-                    'total_canceled_payments': total_canceled_payments,
-                },
-                message='Admin statistics retrieved successfully',
-                status=200
-            )
+            # total_merchants = Merchant.objects.count()
+            # total_admins = User.objects.filter(is_staff=True).count()
+
+
         except Exception as e:
             return JSONResponseSender.send_error(
                 code=1020,
@@ -403,3 +481,43 @@ class AdminStatsView(APIView):
                 description=str(e),
                 status=500
             )
+
+
+class MerchantStatsView(APIView):
+    permission_classes = [IsAuthenticated, IsMerchantUser]
+
+    #@method_decorator(ratelimit(key='ip', rate='5/m', block=True, method='GET'), name='dispatch')
+    def get(self, request):
+        try:
+            merchant = Merchant.objects.get(user=request.user)
+            if not merchant:
+                return JSONResponseSender.send_error('403','Unauthorized','User is not a merchant')
+
+            total_orders = Order.objects.filter(merchant=merchant).count()
+            total_successful_payments = Payment.objects.filter(
+                order__merchant=merchant, status='captured'
+            ).count()
+
+            total_revenue = Payment.objects.filter(order__merchant=merchant,status='captured').aggregate(total=Sum('merchant_payout'))['total'] or 0
+            total_successful_refunds = Payment.objects.filter(
+                order__merchant=merchant, status='refunded'
+            ).count()
+            total_canceled_payments = Payment.objects.filter(
+                order__merchant=merchant, status='failed'
+            ).count()
+            total_authorized_payments = Payment.objects.filter(order__merchant=merchant, status='authorized').count()
+
+            return JSONResponseSender.send_success(
+                data={
+                    'total_orders': total_orders,
+                    'total_revenue': total_revenue,
+                    'successful_payments': total_successful_payments,
+                    'successful_refunds': total_successful_refunds,
+                    'canceled_payments': total_canceled_payments,
+                    'authorized_payments': total_authorized_payments,
+                }
+            )
+        except Exception as e:
+            return JSONResponseSender.send_error("500","Failed to retrieve merchant statistics",str(e))
+
+

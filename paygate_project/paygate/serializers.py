@@ -53,7 +53,7 @@ class PaymentSerializer(serializers.ModelSerializer):
     order = serializers.CharField(source='order.order_id')  # Serialize order as order_id string
     class Meta:
         model = Payment
-        fields = ['payment_id', 'order', 'amount', 'status', 'created_at']
+        fields = ['payment_id', 'order', 'amount', 'status', 'created_at','commission_percentage','commission_amount','merchant_payout']
 
 class WebhookLogSerializer(serializers.ModelSerializer):
     class Meta:

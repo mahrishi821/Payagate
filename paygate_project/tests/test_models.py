@@ -197,7 +197,7 @@ class TestPaymentModel:
     def test_payment_status_choices(self):
         """Test payment status values."""
         # Test various status values that should be valid
-        valid_statuses = ['pending', 'authorized', 'captured', 'failed', 'refunded']
+        valid_statuses = ['pending', 'authorized', 'captured', 'failed', 'refunded', 'voided']
         for status in valid_statuses:
             payment = PaymentFactory(status=status)
             payment.save()  # Should not raise any error

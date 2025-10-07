@@ -153,14 +153,14 @@ class TestPaymentProcessorRefunds:
         self.order = OrderFactory(merchant=self.merchant)
 
     def test_process_refund_authorized_payment(self):
-        """Test successful refund of authorized payment."""
+        """Test refund failure for authorized payment (should not be refundable)."""
         payment = PaymentFactory(order=self.order, status='authorized')
         
         result = PaymentProcessor.process_refund(payment)
         
-        assert result is True
+        assert result is False
         payment.refresh_from_db()
-        assert payment.status == 'refunded'
+        assert payment.status == 'authorized'  # Status unchanged
 
     def test_process_refund_captured_payment(self):
         """Test successful refund of captured payment."""
@@ -174,7 +174,7 @@ class TestPaymentProcessorRefunds:
 
     def test_process_refund_invalid_status(self):
         """Test refund failure for payments with invalid status."""
-        invalid_statuses = ['pending', 'failed', 'refunded']
+        invalid_statuses = ['pending', 'failed', 'refunded', 'authorized', 'voided']
         
         for status in invalid_statuses:
             payment = PaymentFactory(order=self.order, status=status)
@@ -198,7 +198,7 @@ class TestPaymentProcessorRefunds:
 
     def test_process_refund_updates_only_status(self):
         """Test that refund only updates the status field."""
-        payment = PaymentFactory(order=self.order, status='authorized')
+        payment = PaymentFactory(order=self.order, status='captured')
         original_amount = payment.amount
         original_created_at = payment.created_at
         original_payment_id = payment.payment_id
@@ -211,6 +211,74 @@ class TestPaymentProcessorRefunds:
         assert payment.amount == original_amount
         assert payment.created_at == original_created_at
         assert payment.payment_id == original_payment_id
+
+
+@pytest.mark.django_db
+class TestPaymentCaptureAndVoid:
+    """Test PaymentProcessor capture and void functionality."""
+
+    def setup_method(self):
+        """Set up test data for each test."""
+        self.merchant = MerchantFactory()
+        self.order = OrderFactory(merchant=self.merchant)
+
+    def test_capture_authorized_payment(self):
+        """Test successful capture of authorized payment."""
+        payment = PaymentFactory(order=self.order, status='authorized')
+        
+        with patch('random.random', return_value=0.5):  # Mock success
+            result = PaymentProcessor.capture_authorized_payment(payment)
+        
+        assert result is True
+        payment.refresh_from_db()
+        assert payment.status == 'captured'
+
+    def test_capture_authorized_payment_failure(self):
+        """Test capture failure scenario."""
+        payment = PaymentFactory(order=self.order, status='authorized')
+        
+        with patch('random.random', return_value=0.99):  # Mock failure (95% success rate)
+            result = PaymentProcessor.capture_authorized_payment(payment)
+        
+        assert result is False
+        payment.refresh_from_db()
+        assert payment.status == 'authorized'  # Status unchanged
+
+    def test_capture_invalid_status(self):
+        """Test capture failure for non-authorized payments."""
+        invalid_statuses = ['pending', 'failed', 'captured', 'refunded', 'voided']
+        
+        for status in invalid_statuses:
+            payment = PaymentFactory(order=self.order, status=status)
+            
+            result = PaymentProcessor.capture_authorized_payment(payment)
+            
+            assert result is False
+            payment.refresh_from_db()
+            assert payment.status == status  # Status unchanged
+
+    def test_void_authorized_payment(self):
+        """Test successful void of authorized payment."""
+        payment = PaymentFactory(order=self.order, status='authorized')
+        
+        result = PaymentProcessor.void_authorized_payment(payment)
+        
+        assert result is True
+        payment.refresh_from_db()
+        assert payment.status == 'voided'
+
+    def test_void_invalid_status(self):
+        """Test void failure for non-authorized payments."""
+        invalid_statuses = ['pending', 'failed', 'captured', 'refunded', 'voided']
+        
+        for status in invalid_statuses:
+            payment = PaymentFactory(order=self.order, status=status)
+            
+            result = PaymentProcessor.void_authorized_payment(payment)
+            
+            assert result is False
+            payment.refresh_from_db()
+            assert payment.status == status  # Status unchanged
 
 
 @pytest.mark.django_db 

@@ -1,9 +1,8 @@
 from django.urls import path
 from .views import (
     RegisterView, RegisterAdminView, CustomTokenObtainPairView,LogoutView ,CustomTokenRefreshView
-     , OrderCreateView, PaymentProcessView, RefundProcessView, AdminStatsView
-)
-
+     , OrderCreateView, PaymentProcessView, RefundProcessView, AdminStatsView,MerchantStatsView,InProgressOrdersView,
+CompletedPaymentView)
 
 urlpatterns = [
     path('api/v1/auth/register/', RegisterView.as_view(), name='register'),  # register the merchant user
@@ -12,7 +11,10 @@ urlpatterns = [
     path('api/v1/auth/refresh/', CustomTokenRefreshView.as_view(), name='token_refresh'),     # refresh token
     path('api/v1/auth/logout/', LogoutView.as_view(), name='logout'),
     path('api/v1/orders/', OrderCreateView.as_view(), name='order_create'),
-    path('api/v1/payments/', PaymentProcessView.as_view(), name='payment_process'),
+    path('api/v1/payment-complete/',CompletedPaymentView.as_view(), name='payment_complete'),
+    path('api/v1/payment-process/', InProgressOrdersView.as_view(), name='payment_process'),
+    path('api/v1/payments/', PaymentProcessView.as_view(), name='payment'),
     path('api/v1/refunds/', RefundProcessView.as_view(), name='refund_process'),
     path('api/v1/admin/stats/', AdminStatsView.as_view(), name='admin_stats'),
+    path('api/v1/merchants/stats/', MerchantStatsView.as_view(), name='merchant_stats'),
 ]

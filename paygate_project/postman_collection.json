@@ -1,0 +1,496 @@
+{
+	"info": {
+		"_postman_id": "353b1dc6-38de-40aa-95f8-ac230625eb71",
+		"name": "paygate",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "38986921"
+	},
+	"item": [
+		{
+			"name": "auth",
+			"item": [
+				{
+					"name": "merchant_registration",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"user\": {\r\n    \"email\": \"merchant23@example.com\",\r\n    \"name\": \"Merchant Four\",\r\n    \"password\": \"pass123\"\r\n  },\r\n  \"webhook_url\": \"https://example.com/webhook\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://127.0.0.1:8000/paygate/api/v1/auth/register/",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"paygate",
+								"api",
+								"v1",
+								"auth",
+								"register",
+								""
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "example",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "raw",
+									"raw": "{\r\n    \"email\": \"merchant@example.com\",\r\n    \"name\": \"Test Merchant\",\r\n    \"password\": \"securepassword123\",\r\n    \"webhook_url\": \"https://example.com/webhook\"\r\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "http://127.0.0.1:8000/paygate/api/v1/auth/register/",
+									"protocol": "http",
+									"host": [
+										"127",
+										"0",
+										"0",
+										"1"
+									],
+									"port": "8000",
+									"path": [
+										"paygate",
+										"api",
+										"v1",
+										"auth",
+										"register",
+										""
+									]
+								}
+							},
+							"_postman_previewlanguage": null,
+							"header": null,
+							"cookie": [],
+							"body": null
+						}
+					]
+				},
+				{
+					"name": "admin_registration",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzU4NjA4NDQ1LCJpYXQiOjE3NTg2MDQ4NDUsImp0aSI6IjM2YjNkNzc0M2VkNzQ0NjFhNGQxNTQ2ZTQ0YTU1YzA1IiwidXNlcl9pZCI6IjcyZTQ3YTczLTViMmEtNGNkMC1hYmJkLWY1YjJjZmVjYTAzMCJ9.JVYHo0axi8xI_NA18S9ukcVT-AoGCf8aJQgguUfJORM",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"user\": {\r\n    \"email\": \"admin3@example.com\",\r\n    \"name\": \"Admin Three\",\r\n    \"password\": \"admin123\"\r\n  }\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://127.0.0.1:8000/paygate/api/v1/auth/register-admin/",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"paygate",
+								"api",
+								"v1",
+								"auth",
+								"register-admin",
+								""
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "login",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"email\": \"merchant23@example.com\",\r\n  \"password\": \"pass123\"\r\n}\r\n",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://127.0.0.1:8000/paygate/api/v1/auth/token/",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"paygate",
+								"api",
+								"v1",
+								"auth",
+								"token",
+								""
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "refresh_token",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "http://127.0.0.1:8000/paygate/api/v1/auth/refresh/",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"paygate",
+								"api",
+								"v1",
+								"auth",
+								"refresh",
+								""
+							],
+							"query": [
+								{
+									"key": "refresh",
+									"value": "",
+									"disabled": true
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "logout",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzU4NjEwMzYzLCJpYXQiOjE3NTg2MDY3NjMsImp0aSI6IjlkZDQxODFhMGM4ZjQ5YzdiYjE3MjA2NzNlNTA1ZGMwIiwidXNlcl9pZCI6IjcyZTQ3YTczLTViMmEtNGNkMC1hYmJkLWY1YjJjZmVjYTAzMCJ9.4TOdkJrPjZFf_rot84Aq6-fR_SD7QT9tCR3QdDgJbkM",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "http://127.0.0.1:8000/paygate/api/v1/auth/logout/",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"paygate",
+								"api",
+								"v1",
+								"auth",
+								"logout",
+								""
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "New Request",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzU4NjEwMzYzLCJpYXQiOjE3NTg2MDY3NjMsImp0aSI6IjlkZDQxODFhMGM4ZjQ5YzdiYjE3MjA2NzNlNTA1ZGMwIiwidXNlcl9pZCI6IjcyZTQ3YTczLTViMmEtNGNkMC1hYmJkLWY1YjJjZmVjYTAzMCJ9.4TOdkJrPjZFf_rot84Aq6-fR_SD7QT9tCR3QdDgJbkM",
+										"type": "text"
+									}
+								],
+								"url": {
+									"raw": "http://127.0.0.1:8000/paygate/api/v1/auth/logout/",
+									"protocol": "http",
+									"host": [
+										"127",
+										"0",
+										"0",
+										"1"
+									],
+									"port": "8000",
+									"path": [
+										"paygate",
+										"api",
+										"v1",
+										"auth",
+										"logout",
+										""
+									]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": null,
+							"header": [
+								{
+									"key": "Date",
+									"value": "Tue, 23 Sep 2025 06:45:04 GMT"
+								},
+								{
+									"key": "Server",
+									"value": "WSGIServer/0.2 CPython/3.12.7"
+								},
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								},
+								{
+									"key": "Vary",
+									"value": "Accept"
+								},
+								{
+									"key": "Allow",
+									"value": "POST, OPTIONS"
+								},
+								{
+									"key": "X-Frame-Options",
+									"value": "DENY"
+								},
+								{
+									"key": "Content-Length",
+									"value": "133"
+								},
+								{
+									"key": "X-Content-Type-Options",
+									"value": "nosniff"
+								},
+								{
+									"key": "Referrer-Policy",
+									"value": "same-origin"
+								},
+								{
+									"key": "Cross-Origin-Opener-Policy",
+									"value": "same-origin"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"success\": false,\n    \"exception\": {\n        \"code\": 1011,\n        \"message\": \"Logout failed\",\n        \"description\": \"No refresh token provided\",\n        \"meta\": null\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "merchant_registration",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n        \"user\":{\r\n        \"email\": \"merchant@example.com\",\r\n        \"name\": \"Test Merchant\",\r\n        \"password\": \"securepassword123\"\r\n        },\r\n    \"webhook_url\": \"https://example.com/webhook\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://127.0.0.1:8000/paygate/api/v1/auth/register/",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"paygate",
+								"api",
+								"v1",
+								"auth",
+								"register",
+								""
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "payment",
+			"item": [
+				{
+					"name": "order_creation",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzU4NjEzNjQxLCJpYXQiOjE3NTg2MTAwNDEsImp0aSI6ImRlYWJjMTY3MzFmZTQ1ZmJiMGY2MTdlMmU3YjlhNmQ2IiwidXNlcl9pZCI6ImQ2ZWIzZGY5LTc2NWUtNDAyMC05NDkwLWFmYmFkOGJkOWY4MSJ9.IkJ_PT3jepcrA94wjcouuj3PAk6Uj1vzxy5QdHCaHmQ",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"amount\": 10000.00,\r\n    \"currency\": \"US\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://127.0.0.1:8000/paygate/api/v1/orders/",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"paygate",
+								"api",
+								"v1",
+								"orders",
+								""
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "payments",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzU4NjEzNjQxLCJpYXQiOjE3NTg2MTAwNDEsImp0aSI6ImRlYWJjMTY3MzFmZTQ1ZmJiMGY2MTdlMmU3YjlhNmQ2IiwidXNlcl9pZCI6ImQ2ZWIzZGY5LTc2NWUtNDAyMC05NDkwLWFmYmFkOGJkOWY4MSJ9.IkJ_PT3jepcrA94wjcouuj3PAk6Uj1vzxy5QdHCaHmQ",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"order_id\": \"a1839f00-ae5e-4bfd-9541-17bd8908860e\",\r\n    \"card_details\": {\r\n        \"card_number\": \"4111111111111111\",\r\n        \"expiry\": \"12/25\",\r\n        \"cvv\": \"123\"\r\n    }\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://127.0.0.1:8000/paygate/api/v1/payments/",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"paygate",
+								"api",
+								"v1",
+								"payments",
+								""
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "refund",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzU4NjEzNjQxLCJpYXQiOjE3NTg2MTAwNDEsImp0aSI6ImRlYWJjMTY3MzFmZTQ1ZmJiMGY2MTdlMmU3YjlhNmQ2IiwidXNlcl9pZCI6ImQ2ZWIzZGY5LTc2NWUtNDAyMC05NDkwLWFmYmFkOGJkOWY4MSJ9.IkJ_PT3jepcrA94wjcouuj3PAk6Uj1vzxy5QdHCaHmQ",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"payment_id\": \"88acef91-00d5-4f3f-8862-4115bc9f0318\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://127.0.0.1:8000/paygate/api/v1/refunds/",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"paygate",
+								"api",
+								"v1",
+								"refunds",
+								""
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Dashboard",
+			"item": [
+				{
+					"name": "admin_stats",
+					"request": {
+						"method": "GET",
+						"header": []
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}

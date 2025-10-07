@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.utils import timezone
+from decimal import Decimal
 import uuid
 import hashlib
 
@@ -74,7 +75,7 @@ class Order(models.Model):
     merchant = models.ForeignKey(Merchant, on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     currency = models.CharField(max_length=3, default='INR')
-    status = models.CharField(max_length=20, default='created')  # created, paid, failed
+    status = models.CharField(max_length=20, default='created')  # created, paid, failed,In-process
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -84,12 +85,33 @@ class Payment(models.Model):
     payment_id = models.CharField(max_length=100, unique=True, default=uuid.uuid4)
     order = models.ForeignKey(Order, on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
-    status = models.CharField(max_length=20, default='pending')  # pending, authorized, captured, failed
+    status = models.CharField(max_length=20, default='pending')  # pending, authorized, captured, failed, voided, refunded
     card_hash = models.CharField(max_length=64, blank=True)  # Simulated card token
     created_at = models.DateTimeField(auto_now_add=True)
 
+    commission_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('2.00'))  # e.g., 2%
+    commission_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    merchant_payout = models.DecimalField(max_digits=10, decimal_places=2)
+
+    refunded_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+
+    def save(self, *args, **kwargs):
+
+        if self.status == 'captured':  # Only apply for successful payments
+            self.commission_amount = (self.amount * self.commission_percentage) /  Decimal(100)
+            self.merchant_payout = self.amount - self.commission_amount
+        super().save(*args, **kwargs)
+
+    def full_refund(self):
+        if self.status != 'captured':
+            raise ValueError("Only captured payments can be refunded")
+        self.refunded_amount = self.amount
+        self.merchant_payout -= self.amount
+        self.status = 'refunded'
+        self.save()
+
     def __str__(self):
-        return self.payment_id
+        return str(self.payment_id)
 
 class WebhookLog(models.Model):
     payment = models.ForeignKey(Payment, on_delete=models.CASCADE)
