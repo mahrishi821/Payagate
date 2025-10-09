@@ -28,7 +28,7 @@ class TestOrderCreateAPI:
         """Set up test client and authenticated merchant for each test."""
         self.client = APIClient()
         self.url = '/paygate/api/v1/orders/'
-        
+
         # Create authenticated merchant
         self.merchant_user = UserFactory()
         self.merchant = MerchantFactory(user=self.merchant_user)
@@ -40,20 +40,20 @@ class TestOrderCreateAPI:
             'amount': '100.50',
             'currency': 'INR'
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_201_CREATED
+
+        assert response.status_code == 200
         response_data = parse_response(response)
         assert response_data['success'] is True
         assert response_data['message'] == 'Order created successfully'
-        
+
         order_data = response_data['data']
         assert 'order_id' in order_data
         assert order_data['amount'] == '100.50'
         assert order_data['currency'] == 'INR'
         assert order_data['status'] == 'created'
-        
+
         # Verify order was created in database
         order = Order.objects.get(order_id=order_data['order_id'])
         assert order.merchant == self.merchant
@@ -64,53 +64,66 @@ class TestOrderCreateAPI:
         data = {
             'amount': '50.00'
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_201_CREATED
+
+        assert response.status_code == 200
         assert parse_response(response)['data']['currency'] == 'INR'
 
-    def test_create_order_invalid_amount(self):
-        """Test order creation with invalid amount."""
-        invalid_amounts = ['-10.00', '0', 'invalid', '']
-        
+    def test_create_order_invalid_format(self):
+        """Test order creation with invalid amount format."""
+        data = {'amount': 'invalid'}
+
+        response = self.client.post(self.url, data, format='json')
+
+        assert response.status_code == 200
+        assert parse_response(response)['success'] is False
+        assert parse_response(response)['exception']['code'] == 2002
+
+    def test_create_order_negative_or_zero(self):
+        """Test order creation with negative or zero amount."""
+        invalid_amounts = ['-10.00', '0']
+
         for amount in invalid_amounts:
             data = {'amount': amount}
             response = self.client.post(self.url, data, format='json')
-            
-            assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+            assert response.status_code == 200
             assert parse_response(response)['success'] is False
-            assert parse_response(response)['exception']['code'] == 1009
+            assert parse_response(response)['exception']['code'] == 2003
 
     def test_create_order_missing_amount(self):
         """Test order creation without amount."""
         data = {'currency': 'INR'}
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        assert response.status_code == 200
         assert parse_response(response)['success'] is False
+        assert parse_response(response)['exception']['code'] == 2001
 
     def test_create_order_requires_authentication(self):
         """Test that order creation requires authentication."""
         self.client.force_authenticate(user=None)
-        
+
         data = {'amount': '100.00'}
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+        assert response.status_code == 401
 
     def test_create_order_requires_merchant(self):
         """Test that only merchants can create orders."""
         # Create regular user (not a merchant)
         regular_user = UserFactory()
         self.client.force_authenticate(user=regular_user)
-        
+
         data = {'amount': '100.00'}
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-        assert parse_response(response)['exception']['code'] == 1008
+
+        assert response.status_code == 200
+        response_data = parse_response(response)
+        assert response_data['success'] is False
+        assert response_data['exception']['code'] == 1050
 
 
 @pytest.mark.django_db
@@ -121,7 +134,7 @@ class TestPaymentProcessAPI:
         """Set up test client and test data for each test."""
         self.client = APIClient()
         self.url = '/paygate/api/v1/payments/'
-        
+
         # Create authenticated merchant with order
         self.merchant_user = UserFactory()
         self.merchant = MerchantFactory(user=self.merchant_user)
@@ -133,10 +146,10 @@ class TestPaymentProcessAPI:
     def test_process_payment_success(self, mock_webhook, mock_process):
         """Test successful payment processing."""
         # Mock successful payment
-        mock_payment = PaymentFactory(order=self.order, status='authorized')
+        mock_payment = PaymentFactory(order=self.order, status='captured')
         mock_process.return_value = (mock_payment, True)
         mock_webhook.return_value = True
-        
+
         data = {
             'order_id': str(self.order.order_id),
             'card_details': {
@@ -145,13 +158,13 @@ class TestPaymentProcessAPI:
                 'cvv': '123'
             }
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_201_CREATED
+
+        assert response.status_code == 200
         assert parse_response(response)['success'] is True
         assert parse_response(response)['message'] == 'Payment processed successfully'
-        
+
         # Verify mocks were called
         mock_process.assert_called_once_with(self.order, data['card_details'])
         mock_webhook.assert_called_once_with(mock_payment, self.merchant)
@@ -162,7 +175,7 @@ class TestPaymentProcessAPI:
         # Mock failed payment
         mock_payment = PaymentFactory(order=self.order, status='failed')
         mock_process.return_value = (mock_payment, False)
-        
+
         data = {
             'order_id': str(self.order.order_id),
             'card_details': {
@@ -171,10 +184,10 @@ class TestPaymentProcessAPI:
                 'cvv': '123'
             }
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_201_CREATED
+
+        assert response.status_code == 200
         assert parse_response(response)['data']['status'] == 'failed'
 
     @patch('paygate.services.PaymentProcessor.process_payment')
@@ -182,7 +195,7 @@ class TestPaymentProcessAPI:
         """Test payment processing with invalid card details."""
         # Mock invalid card response
         mock_process.return_value = (None, False)
-        
+
         data = {
             'order_id': str(self.order.order_id),
             'card_details': {
@@ -191,11 +204,11 @@ class TestPaymentProcessAPI:
                 'cvv': '123'
             }
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert parse_response(response)['exception']['code'] == 1011
+
+        assert response.status_code == 200
+        assert parse_response(response)['exception']['code'] == 3001
 
     def test_process_payment_nonexistent_order(self):
         """Test payment processing with nonexistent order."""
@@ -207,18 +220,18 @@ class TestPaymentProcessAPI:
                 'cvv': '123'
             }
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert parse_response(response)['exception']['code'] == 1012
+
+        assert response.status_code == 200
+        assert parse_response(response)['exception']['code'] == 2010
 
     def test_process_payment_unauthorized_order(self):
         """Test payment processing for order belonging to different merchant."""
         # Create order for different merchant
         other_merchant = MerchantFactory()
         other_order = OrderFactory(merchant=other_merchant)
-        
+
         data = {
             'order_id': str(other_order.order_id),
             'card_details': {
@@ -227,11 +240,11 @@ class TestPaymentProcessAPI:
                 'cvv': '123'
             }
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert parse_response(response)['exception']['code'] == 1012
+
+        assert response.status_code == 200
+        assert parse_response(response)['exception']['code'] == 2010
 
     def test_process_payment_missing_order_id(self):
         """Test payment processing without order ID."""
@@ -242,16 +255,16 @@ class TestPaymentProcessAPI:
                 'cvv': '123'
             }
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+        assert response.status_code == 200
 
     def test_process_payment_requires_merchant(self):
         """Test that only merchants can process payments."""
         regular_user = UserFactory()
         self.client.force_authenticate(user=regular_user)
-        
+
         data = {
             'order_id': str(self.order.order_id),
             'card_details': {
@@ -260,11 +273,13 @@ class TestPaymentProcessAPI:
                 'cvv': '123'
             }
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-        assert parse_response(response)['exception']['code'] == 1010
+
+        assert response.status_code == 200
+        response_data = parse_response(response)
+        assert response_data['success'] is False
+        assert response_data['exception']['code'] == 1050
 
 
 @pytest.mark.django_db
@@ -275,7 +290,7 @@ class TestRefundProcessAPI:
         """Set up test client and test data for each test."""
         self.client = APIClient()
         self.url = '/paygate/api/v1/refunds/'
-        
+
         # Create authenticated merchant with payment
         self.merchant_user = UserFactory()
         self.merchant = MerchantFactory(user=self.merchant_user)
@@ -289,18 +304,18 @@ class TestRefundProcessAPI:
         """Test successful refund processing."""
         mock_refund.return_value = True
         mock_webhook.return_value = True
-        
+
         data = {
             'payment_id': str(self.payment.payment_id)
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_200_OK
+
+        assert response.status_code == 200
         assert parse_response(response)['success'] is True
         assert parse_response(response)['message'] == 'Refund processed successfully'
         assert parse_response(response)['data']['status'] == 'refunded'
-        
+
         mock_refund.assert_called_once_with(self.payment)
         mock_webhook.assert_called_once_with(self.payment, self.merchant)
 
@@ -308,55 +323,55 @@ class TestRefundProcessAPI:
     def test_process_refund_failure(self, mock_refund):
         """Test failed refund processing."""
         mock_refund.return_value = False
-        
+
         data = {
             'payment_id': str(self.payment.payment_id)
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert parse_response(response)['exception']['code'] == 1014
+
+        assert response.status_code == 200
+        assert parse_response(response)['exception']['code'] == 4004
 
     def test_process_refund_nonexistent_payment(self):
         """Test refund processing with nonexistent payment."""
         data = {
             'payment_id': 'nonexistent-payment-id'
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert parse_response(response)['exception']['code'] == 1015
+
+        assert response.status_code == 200
+        assert parse_response(response)['exception']['code'] == 4010
 
     def test_process_refund_unauthorized_payment(self):
         """Test refund processing for payment belonging to different merchant."""
         other_merchant = MerchantFactory()
         other_order = OrderFactory(merchant=other_merchant)
         other_payment = PaymentFactory(order=other_order)
-        
+
         data = {
             'payment_id': str(other_payment.payment_id)
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert parse_response(response)['exception']['code'] == 1015
+
+        assert response.status_code == 200
+        assert parse_response(response)['exception']['code'] == 4010
 
     def test_process_refund_requires_merchant(self):
         """Test that only merchants can process refunds."""
         regular_user = UserFactory()
         self.client.force_authenticate(user=regular_user)
-        
+
         data = {
             'payment_id': str(self.payment.payment_id)
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-        assert parse_response(response)['exception']['code'] == 1013
+
+        assert response.status_code == 200
+        assert parse_response(response)['exception']['code'] == 1050
 
 
 @pytest.mark.django_db
@@ -367,34 +382,35 @@ class TestAdminStatsAPI:
         """Set up test client and test data for each test."""
         self.client = APIClient()
         self.url = '/paygate/api/v1/admin/stats/'
-        
+
         # Create admin user
         self.admin_user = AdminUserFactory()
         self.client.force_authenticate(user=self.admin_user)
-        
+
         # Create test data
         self.merchant = MerchantFactory()
         self.order1 = OrderFactory(merchant=self.merchant)
         self.order2 = OrderFactory(merchant=self.merchant)
-        
+
         self.payment1 = PaymentFactory(order=self.order1, status='authorized')
         self.payment2 = PaymentFactory(order=self.order2, status='failed')
         self.payment3 = PaymentFactory(order=self.order1, status='refunded')
+        self.payment4 = PaymentFactory(order=self.order1, status='captured')
 
     def test_get_overall_stats(self):
         """Test getting overall admin statistics."""
         response = self.client.get(self.url)
-        
-        assert response.status_code == status.HTTP_200_OK
+
+        assert response.status_code == 200
         assert parse_response(response)['success'] is True
-        
+
         stats = parse_response(response)['data']
         assert 'total_merchants' in stats
         assert 'total_orders' in stats
         assert 'total_successful_payments' in stats
         assert 'total_successful_refunds' in stats
         assert 'total_canceled_payments' in stats
-        
+
         # Verify counts match test data
         assert stats['total_merchants'] >= 1
         assert stats['total_orders'] >= 2
@@ -404,42 +420,42 @@ class TestAdminStatsAPI:
 
     def test_get_merchant_specific_stats(self):
         """Test getting statistics for specific merchant."""
-        response = self.client.get(self.url, {'merchant_id': self.merchant.id})
-        
-        assert response.status_code == status.HTTP_200_OK
+        response = self.client.get(self.url, {'merchant_id': str(self.merchant.id)})
+
+        assert response.status_code == 200
         assert parse_response(response)['success'] is True
-        
+
         stats = parse_response(response)['data']
         assert 'user__email' in stats
         assert stats['user__email'] == self.merchant.user.email
         assert stats['order_count'] == 2
-        assert stats['successful_payments'] == 1
+        assert stats['successful_payments'] == 2
         assert stats['successful_refunds'] == 1
         assert stats['canceled_payments'] == 1
 
     def test_get_stats_invalid_merchant_id(self):
         """Test getting statistics with invalid merchant ID."""
         response = self.client.get(self.url, {'merchant_id': 999999})
-        
-        assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert parse_response(response)['exception']['code'] == 1019
+
+        assert response.status_code == 200
+        assert parse_response(response)['exception']['code'] == 5011
 
     def test_get_stats_requires_admin(self):
         """Test that only admins can access statistics."""
         regular_user = UserFactory()
         self.client.force_authenticate(user=regular_user)
-        
+
         response = self.client.get(self.url)
-        
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+        assert response.status_code == 403
 
     def test_get_stats_requires_authentication(self):
         """Test that statistics endpoint requires authentication."""
         self.client.force_authenticate(user=None)
-        
+
         response = self.client.get(self.url)
-        
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+        assert response.status_code == 401
 
 
 @pytest.mark.django_db
@@ -449,7 +465,7 @@ class TestPaymentFlowIntegration:
     def setup_method(self):
         """Set up test client and authenticated merchant."""
         self.client = APIClient()
-        
+
         self.merchant_user = UserFactory()
         self.merchant = MerchantFactory(
             user=self.merchant_user,
@@ -467,18 +483,18 @@ class TestPaymentFlowIntegration:
             'amount': '150.75',
             'currency': 'INR'
         }
-        
+
         order_response = self.client.post('/paygate/api/v1/orders/', order_data, format='json')
-        assert order_response.status_code == status.HTTP_201_CREATED
-        
+        assert order_response.status_code == 200
+
         order_id = parse_response(order_response)['data']['order_id']
-        
+
         # 2. Process payment - Create real payment for the real order
         real_order = Order.objects.get(order_id=order_id)
         mock_payment = PaymentFactory(order=real_order)
         mock_process.return_value = (mock_payment, True)
         mock_webhook.return_value = True
-        
+
         payment_data = {
             'order_id': order_id,
             'card_details': {
@@ -487,22 +503,22 @@ class TestPaymentFlowIntegration:
                 'cvv': '123'
             }
         }
-        
+
         payment_response = self.client.post('/paygate/api/v1/payments/', payment_data, format='json')
-        assert payment_response.status_code == status.HTTP_201_CREATED
-        
+        assert payment_response.status_code == 200
+
         payment_id = parse_response(payment_response)['data']['payment_id']
-        
+
         # 3. Process refund
         mock_refund.return_value = True
-        
+
         refund_data = {
             'payment_id': payment_id
         }
-        
+
         refund_response = self.client.post('/paygate/api/v1/refunds/', refund_data, format='json')
-        assert refund_response.status_code == status.HTTP_200_OK
-        
+        assert refund_response.status_code == 200
+
         # Verify all services were called appropriately
         assert mock_process.called
         assert mock_refund.called

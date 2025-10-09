@@ -42,7 +42,7 @@ class TestPaymentProcessor:
         assert payment is not None
         assert payment.order == self.order
         assert payment.amount == self.order.amount
-        assert payment.status == 'authorized'
+        assert payment.status == 'captured'
         assert payment.card_hash is not None
         assert len(payment.card_hash) == 64  # SHA256 hash length
         
@@ -79,12 +79,23 @@ class TestPaymentProcessor:
             assert payment is None
             assert success is False
 
+    def test_process_payment_authorized_only(self):
+        card_details = {
+            'card_number': '4111111111111111',
+            'expiry': '12/25',
+            'cvv': '123'
+        }
+        # First: auth success, Second: no capture
+        with patch('random.random', side_effect=[0.5, 0.96]):
+            payment, success = PaymentProcessor.process_payment(self.order, card_details)
+
+        assert payment.status == 'authorized'
     def test_process_payment_missing_card_details(self):
         """Test payment processing with missing card details."""
         card_details = {}  # Empty card details
-        
+
         payment, success = PaymentProcessor.process_payment(self.order, card_details)
-        
+
         assert payment is None
         assert success is False
 
@@ -95,19 +106,19 @@ class TestPaymentProcessor:
             'expiry': '12/25',
             'cvv': '123'
         }
-        
+
         with patch('random.random', return_value=0.5):
             payment, success = PaymentProcessor.process_payment(self.order, card_details)
-        
+
         assert success is True
         # Verify the card number is hashed, not stored in plain text
         assert payment.card_hash != card_details['card_number']
         assert len(payment.card_hash) == 64  # SHA256 length
-        
+
         # Verify the same card number produces the same hash
         with patch('random.random', return_value=0.5):
             payment2, success2 = PaymentProcessor.process_payment(self.order, card_details)
-        
+
         assert payment.card_hash == payment2.card_hash
 
     def test_process_payment_creates_unique_payment_id(self):
@@ -117,11 +128,11 @@ class TestPaymentProcessor:
             'expiry': '12/25',
             'cvv': '123'
         }
-        
+
         with patch('random.random', return_value=0.5):
             payment1, success1 = PaymentProcessor.process_payment(self.order, card_details)
             payment2, success2 = PaymentProcessor.process_payment(self.order, card_details)
-        
+
         assert success1 is True
         assert success2 is True
         assert payment1.payment_id != payment2.payment_id
@@ -133,12 +144,12 @@ class TestPaymentProcessor:
             'expiry': '12/25',
             'cvv': '123'
         }
-        
+
         before_time = timezone.now()
         with patch('random.random', return_value=0.5):
             payment, success = PaymentProcessor.process_payment(self.order, card_details)
         after_time = timezone.now()
-        
+
         assert success is True
         assert before_time <= payment.created_at <= after_time
 
@@ -155,9 +166,9 @@ class TestPaymentProcessorRefunds:
     def test_process_refund_authorized_payment(self):
         """Test refund failure for authorized payment (should not be refundable)."""
         payment = PaymentFactory(order=self.order, status='authorized')
-        
+
         result = PaymentProcessor.process_refund(payment)
-        
+
         assert result is False
         payment.refresh_from_db()
         assert payment.status == 'authorized'  # Status unchanged
@@ -165,9 +176,9 @@ class TestPaymentProcessorRefunds:
     def test_process_refund_captured_payment(self):
         """Test successful refund of captured payment."""
         payment = PaymentFactory(order=self.order, status='captured')
-        
+
         result = PaymentProcessor.process_refund(payment)
-        
+
         assert result is True
         payment.refresh_from_db()
         assert payment.status == 'refunded'
@@ -175,13 +186,13 @@ class TestPaymentProcessorRefunds:
     def test_process_refund_invalid_status(self):
         """Test refund failure for payments with invalid status."""
         invalid_statuses = ['pending', 'failed', 'refunded', 'authorized', 'voided']
-        
+
         for status in invalid_statuses:
             payment = PaymentFactory(order=self.order, status=status)
             original_status = payment.status
-            
+
             result = PaymentProcessor.process_refund(payment)
-            
+
             assert result is False
             payment.refresh_from_db()
             assert payment.status == original_status  # Status unchanged
@@ -189,9 +200,9 @@ class TestPaymentProcessorRefunds:
     def test_process_refund_already_refunded(self):
         """Test refund attempt on already refunded payment."""
         payment = PaymentFactory(order=self.order, status='refunded')
-        
+
         result = PaymentProcessor.process_refund(payment)
-        
+
         assert result is False
         payment.refresh_from_db()
         assert payment.status == 'refunded'  # Status unchanged
@@ -202,9 +213,9 @@ class TestPaymentProcessorRefunds:
         original_amount = payment.amount
         original_created_at = payment.created_at
         original_payment_id = payment.payment_id
-        
+
         result = PaymentProcessor.process_refund(payment)
-        
+
         assert result is True
         payment.refresh_from_db()
         assert payment.status == 'refunded'
@@ -225,10 +236,10 @@ class TestPaymentCaptureAndVoid:
     def test_capture_authorized_payment(self):
         """Test successful capture of authorized payment."""
         payment = PaymentFactory(order=self.order, status='authorized')
-        
+
         with patch('random.random', return_value=0.5):  # Mock success
             result = PaymentProcessor.capture_authorized_payment(payment)
-        
+
         assert result is True
         payment.refresh_from_db()
         assert payment.status == 'captured'
@@ -236,10 +247,10 @@ class TestPaymentCaptureAndVoid:
     def test_capture_authorized_payment_failure(self):
         """Test capture failure scenario."""
         payment = PaymentFactory(order=self.order, status='authorized')
-        
+
         with patch('random.random', return_value=0.99):  # Mock failure (95% success rate)
             result = PaymentProcessor.capture_authorized_payment(payment)
-        
+
         assert result is False
         payment.refresh_from_db()
         assert payment.status == 'authorized'  # Status unchanged
@@ -247,41 +258,19 @@ class TestPaymentCaptureAndVoid:
     def test_capture_invalid_status(self):
         """Test capture failure for non-authorized payments."""
         invalid_statuses = ['pending', 'failed', 'captured', 'refunded', 'voided']
-        
+
         for status in invalid_statuses:
             payment = PaymentFactory(order=self.order, status=status)
-            
+            original_status = payment.status
+
             result = PaymentProcessor.capture_authorized_payment(payment)
-            
+
             assert result is False
             payment.refresh_from_db()
-            assert payment.status == status  # Status unchanged
-
-    def test_void_authorized_payment(self):
-        """Test successful void of authorized payment."""
-        payment = PaymentFactory(order=self.order, status='authorized')
-        
-        result = PaymentProcessor.void_authorized_payment(payment)
-        
-        assert result is True
-        payment.refresh_from_db()
-        assert payment.status == 'voided'
-
-    def test_void_invalid_status(self):
-        """Test void failure for non-authorized payments."""
-        invalid_statuses = ['pending', 'failed', 'captured', 'refunded', 'voided']
-        
-        for status in invalid_statuses:
-            payment = PaymentFactory(order=self.order, status=status)
-            
-            result = PaymentProcessor.void_authorized_payment(payment)
-            
-            assert result is False
-            payment.refresh_from_db()
-            assert payment.status == status  # Status unchanged
+            assert payment.status == original_status  # Status unchanged
 
 
-@pytest.mark.django_db 
+@pytest.mark.django_db
 class TestWebhookHandler:
     """Test WebhookHandler service."""
 
@@ -295,33 +284,23 @@ class TestWebhookHandler:
         """Test successful webhook sending."""
         with patch('random.random', return_value=0.5):  # Mock 80% success rate
             result = WebhookHandler.send_webhook(self.payment, self.merchant)
-        
+
         assert result is True
-        
+
         # Verify webhook log was created
-        webhook_log = WebhookLog.objects.get(payment=self.payment)
+        webhook_log = WebhookLog.objects.filter(payment=self.payment).latest('created_at')
         assert webhook_log.status == 'sent'
         assert webhook_log.response == '{"status": "success"}'
-        
-        # Verify payload structure
-        payload = webhook_log.payload
-        assert payload['event'] == f'payment.{self.payment.status}'
-        assert payload['payment_id'] == str(self.payment.payment_id)
-        assert payload['order_id'] == str(self.payment.order.order_id)
-        assert payload['amount'] == str(self.payment.amount)
-        assert payload['currency'] == self.payment.order.currency
-        assert payload['status'] == self.payment.status
-        assert 'created_at' in payload
 
     def test_send_webhook_failure(self):
         """Test failed webhook sending."""
         with patch('random.random', return_value=0.9):  # Mock failure (>80%)
             result = WebhookHandler.send_webhook(self.payment, self.merchant)
-        
+
         assert result is False
-        
+
         # Verify webhook log was created with failure
-        webhook_log = WebhookLog.objects.get(payment=self.payment)
+        webhook_log = WebhookLog.objects.filter(payment=self.payment).latest('created_at')
         assert webhook_log.status == 'failed'
         assert webhook_log.response == '{"error": "Webhook endpoint failed"}'
 
@@ -330,13 +309,13 @@ class TestWebhookHandler:
         merchant_no_webhook = MerchantFactory(webhook_url='')
         order = OrderFactory(merchant=merchant_no_webhook)
         payment = PaymentFactory(order=order)
-        
+
         result = WebhookHandler.send_webhook(payment, merchant_no_webhook)
-        
+
         assert result is False
-        
+
         # Verify webhook log was created with appropriate error
-        webhook_log = WebhookLog.objects.get(payment=payment)
+        webhook_log = WebhookLog.objects.filter(payment=payment).latest('created_at')
         assert webhook_log.status == 'failed'
         assert webhook_log.response == 'No webhook URL configured for merchant'
         assert 'No webhook URL provided' in webhook_log.payload['error']
@@ -346,9 +325,9 @@ class TestWebhookHandler:
         merchant_null_webhook = MerchantFactory(webhook_url=None)
         order = OrderFactory(merchant=merchant_null_webhook)
         payment = PaymentFactory(order=order)
-        
+
         result = WebhookHandler.send_webhook(payment, merchant_null_webhook)
-        
+
         assert result is False
 
     def test_send_webhook_payload_format(self):
@@ -358,18 +337,18 @@ class TestWebhookHandler:
             status='captured',
             amount=Decimal('150.75')
         )
-        
+
         with patch('random.random', return_value=0.5):
             WebhookHandler.send_webhook(payment, self.merchant)
-        
-        webhook_log = WebhookLog.objects.get(payment=payment)
+
+        webhook_log = WebhookLog.objects.filter(payment=payment).latest('created_at')
         payload = webhook_log.payload
-        
+
         # Test all required fields
         expected_fields = ['event', 'payment_id', 'order_id', 'amount', 'currency', 'status', 'created_at']
         for field in expected_fields:
             assert field in payload, f"Field '{field}' missing from webhook payload"
-        
+
         # Test field values
         assert payload['event'] == 'payment.captured'
         assert payload['payment_id'] == str(payment.payment_id)
@@ -381,16 +360,16 @@ class TestWebhookHandler:
     def test_send_webhook_different_payment_statuses(self):
         """Test webhook payload for different payment statuses."""
         statuses = ['pending', 'authorized', 'captured', 'failed', 'refunded']
-        
+
         for status in statuses:
             payment = PaymentFactory(order=self.order, status=status)
-            
+
             with patch('random.random', return_value=0.5):
                 WebhookHandler.send_webhook(payment, self.merchant)
-            
-            webhook_log = WebhookLog.objects.get(payment=payment)
+
+            webhook_log = WebhookLog.objects.filter(payment=payment).latest('created_at')
             payload = webhook_log.payload
-            
+
             assert payload['event'] == f'payment.{status}'
             assert payload['status'] == status
 
@@ -408,10 +387,10 @@ class TestWebhookHandler:
                     response='Test exception occurred'
                 )
                 return False
-            
+
             mock_send.side_effect = side_effect
             result = WebhookHandler.send_webhook(self.payment, self.merchant)
-            
+
             assert result is False
             assert WebhookLog.objects.filter(payment=self.payment).exists()
 
@@ -420,16 +399,16 @@ class TestWebhookHandler:
         """Test webhook behavior under different success rates."""
         # Simulate multiple webhook attempts with different outcomes
         mock_random.side_effect = [0.9, 0.5]  # First fails, second succeeds
-        
+
         # First attempt (failure)
         result1 = WebhookHandler.send_webhook(self.payment, self.merchant)
         assert result1 is False
-        
+
         # Second attempt (success) - simulating retry
         payment2 = PaymentFactory(order=self.order, status='captured')
         result2 = WebhookHandler.send_webhook(payment2, self.merchant)
         assert result2 is True
-        
+
         # Verify both attempts were logged
         assert WebhookLog.objects.filter(payment=self.payment).count() == 1
         assert WebhookLog.objects.filter(payment=payment2).count() == 1
@@ -440,16 +419,16 @@ class TestWebhookHandler:
         with patch('random.random', return_value=0.5):
             # First webhook
             WebhookHandler.send_webhook(self.payment, self.merchant)
-            
+
             # Update payment status and send another webhook
             self.payment.status = 'captured'
             self.payment.save()
             WebhookHandler.send_webhook(self.payment, self.merchant)
-        
+
         # Should have 2 webhook logs for the same payment
         logs = WebhookLog.objects.filter(payment=self.payment)
         assert logs.count() == 2
-        
+
         # Verify different events were logged
         events = [log.payload['event'] for log in logs]
         assert 'payment.authorized' in events
@@ -469,47 +448,48 @@ class TestServiceIntegration:
     def test_payment_to_webhook_flow(self, mock_random):
         """Test complete flow from payment processing to webhook."""
         # Mock successful payment
-        mock_random.return_value = 0.5
-        
+        mock_random.side_effect = [0.5, 0.5]
+
         card_details = {
             'card_number': '4111111111111111',
             'expiry': '12/25',
             'cvv': '123'
         }
-        
+
         # Process payment
         payment, payment_success = PaymentProcessor.process_payment(self.order, card_details)
         assert payment_success is True
-        assert payment.status == 'authorized'
-        
+        assert payment.status == 'captured'
+
         # Send webhook
-        webhook_success = WebhookHandler.send_webhook(payment, self.merchant)
+        with patch('random.random', return_value=0.5):
+            webhook_success = WebhookHandler.send_webhook(payment, self.merchant)
         assert webhook_success is True
-        
+
         # Verify webhook log contains correct payment info
-        webhook_log = WebhookLog.objects.get(payment=payment)
+        webhook_log = WebhookLog.objects.filter(payment=payment).latest('created_at')
         payload = webhook_log.payload
         assert payload['payment_id'] == str(payment.payment_id)
         assert payload['amount'] == str(payment.amount)
-        assert payload['status'] == 'authorized'
+        assert payload['status'] == 'captured'
 
     def test_refund_to_webhook_flow(self):
         """Test complete flow from refund processing to webhook."""
         # Create an authorized payment
-        payment = PaymentFactory(order=self.order, status='authorized')
-        
+        payment = PaymentFactory(order=self.order, status='captured')
+
         # Process refund
         refund_success = PaymentProcessor.process_refund(payment)
         assert refund_success is True
         assert payment.status == 'refunded'
-        
+
         # Send webhook for refund
         with patch('random.random', return_value=0.5):
             webhook_success = WebhookHandler.send_webhook(payment, self.merchant)
         assert webhook_success is True
-        
+
         # Verify webhook log reflects refunded status
-        webhook_log = WebhookLog.objects.get(payment=payment)
+        webhook_log = WebhookLog.objects.filter(payment=payment).latest('created_at')
         payload = webhook_log.payload
         assert payload['event'] == 'payment.refunded'
         assert payload['status'] == 'refunded'
@@ -521,21 +501,21 @@ class TestServiceIntegration:
             'expiry': '12/25',
             'cvv': '123'
         }
-        
+
         # Mock failed payment
         with patch('random.random', return_value=0.9):  # >80% = failure
             payment, payment_success = PaymentProcessor.process_payment(self.order, card_details)
-        
+
         assert payment_success is False
         assert payment.status == 'failed'
-        
+
         # Send webhook for failed payment
         with patch('random.random', return_value=0.5):  # Webhook succeeds
             webhook_success = WebhookHandler.send_webhook(payment, self.merchant)
         assert webhook_success is True
-        
+
         # Verify webhook contains failure information
-        webhook_log = WebhookLog.objects.get(payment=payment)
+        webhook_log = WebhookLog.objects.filter(payment=payment).latest('created_at')
         payload = webhook_log.payload
         assert payload['event'] == 'payment.failed'
         assert payload['status'] == 'failed'

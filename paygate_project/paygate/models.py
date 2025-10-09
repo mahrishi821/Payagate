@@ -82,6 +82,14 @@ class Order(models.Model):
         return self.order_id
 
 class Payment(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('authorized', 'Authorized'),
+        ('captured', 'Captured'),
+        ('failed', 'Failed'),
+        ('voided', 'Voided'),
+        ('refunded', 'Refunded'),
+    ]
     payment_id = models.CharField(max_length=100, unique=True, default=uuid.uuid4)
     order = models.ForeignKey(Order, on_delete=models.CASCADE)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
@@ -90,8 +98,8 @@ class Payment(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     commission_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('2.00'))  # e.g., 2%
-    commission_amount = models.DecimalField(max_digits=10, decimal_places=2)
-    merchant_payout = models.DecimalField(max_digits=10, decimal_places=2)
+    commission_amount = models.DecimalField(max_digits=10, decimal_places=2,null=True,blank=True)
+    merchant_payout = models.DecimalField(max_digits=10, decimal_places=2,null=True,blank=True)
 
     refunded_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
 

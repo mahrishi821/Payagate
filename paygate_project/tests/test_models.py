@@ -202,6 +202,100 @@ class TestPaymentModel:
             payment = PaymentFactory(status=status)
             payment.save()  # Should not raise any error
 
+    def test_commission_and_payout_calculation_on_capture(self):
+        """Test commission and merchant payout are correctly calculated when captured."""
+        order = OrderFactory(amount=Decimal('100.00'))
+        payment = PaymentFactory(order=order, amount=Decimal('100.00'), status='captured')
+        payment.save()
+
+        expected_commission = (payment.amount * payment.commission_percentage) / Decimal(100)
+        expected_payout = payment.amount - expected_commission
+
+        assert payment.commission_amount == expected_commission
+        assert payment.merchant_payout == expected_payout
+
+    def test_full_refund_logic(self):
+        """Test full refund correctly updates payment fields."""
+        payment = PaymentFactory(status='captured', amount=Decimal('100.00'))
+        payment.save()
+        prev_payout = payment.merchant_payout
+
+        payment.full_refund()
+
+        assert payment.status == 'refunded'
+        assert payment.refunded_amount == Decimal('100.00')
+        assert payment.merchant_payout == prev_payout - Decimal('100.00')
+
+    def test_full_refund_not_allowed_if_not_captured(self):
+        """Test that refund raises error if payment not captured."""
+        payment = PaymentFactory(status='pending', amount=Decimal('100.00'))
+
+        with pytest.raises(ValueError, match="Only captured payments can be refunded"):
+            payment.full_refund()
+
+    def test_default_field_values(self):
+        """Test default commission and refund fields."""
+        payment = PaymentFactory()
+        assert payment.commission_percentage == Decimal('2.00')
+        assert payment.refunded_amount == Decimal('0.00')
+
+    def test_zero_percent_commission(self):
+        """Test payout when commission is 0%."""
+        order = OrderFactory(amount=Decimal('200.00'))
+        payment = PaymentFactory(
+            order=order,
+            amount=Decimal('200.00'),
+            status='captured',
+            commission_percentage=Decimal('0.00')
+        )
+        payment.save()
+
+        assert payment.commission_amount == Decimal('0.00')
+        assert payment.merchant_payout == Decimal('200.00')
+
+    def test_custom_commission_percentage(self):
+        """Test payout with a custom 5% commission."""
+        order = OrderFactory(amount=Decimal('100.00'))
+        payment = PaymentFactory(
+            order=order,
+            amount=Decimal('100.00'),
+            status='captured',
+            commission_percentage=Decimal('5.00')
+        )
+        payment.save()
+
+        expected_commission = Decimal('5.00')
+        expected_payout = Decimal('95.00')
+
+        assert payment.commission_amount == expected_commission
+        assert payment.merchant_payout == expected_payout
+
+    def test_high_commission_percentage(self):
+        """Test when commission is 100% (merchant gets zero payout)."""
+        order = OrderFactory(amount=Decimal('50.00'))
+        payment = PaymentFactory(
+            order=order,
+            amount=Decimal('50.00'),
+            status='captured',
+            commission_percentage=Decimal('100.00')
+        )
+        payment.save()
+
+        assert payment.commission_amount == Decimal('50.00')
+        assert payment.merchant_payout == Decimal('0.00')
+
+    def test_negative_commission_raises_error(self):
+        """Test negative commission value raises ValidationError (if validated)."""
+        order = OrderFactory(amount=Decimal('100.00'))
+        payment = PaymentFactory(
+            order=order,
+            amount=Decimal('100.00'),
+            status='captured',
+            commission_percentage=Decimal('-5.00')
+        )
+        # You can enforce this check inside model clean() later
+        with pytest.raises(ValidationError):
+            payment.full_clean()  # triggers model field validation
 
 @pytest.mark.django_db
 class TestWebhookLogModel:

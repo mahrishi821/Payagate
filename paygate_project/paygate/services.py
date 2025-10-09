@@ -1,9 +1,11 @@
+import logging
 import random
 import hashlib
 import requests
 from django.utils import timezone
+from django.db import transaction
 from .models import Payment, WebhookLog
-
+from .tasks import send_webhook_task
 
 class PaymentProcessor:
     @staticmethod
@@ -24,18 +26,20 @@ class PaymentProcessor:
 
         # Mock authorization success rate: 85% chance of success
         # auth_success = random.random() < 0.85
-        auth_success = True
+        auth_success = random.random() < 0.85
+
         if not auth_success:
             # Create failed payment
             card_hash = hashlib.sha256(card_number.encode()).hexdigest()
-            payment = Payment.objects.create(
-                order=order,
-                amount=order.amount,
-                status='failed',
-                card_hash=card_hash,
-                created_at=timezone.now()
-            )
-
+            with transaction.atomic():
+                payment = Payment.objects.create(
+                    order=order,
+                    amount=order.amount,
+                    status='failed',
+                    card_hash=card_hash,
+                    created_at=timezone.now()
+                )
+            WebhookHandler.send_webhook(payment, payment.order.merchant)
             return payment, False
 
         # Authorization successful - now determine capture
@@ -47,14 +51,14 @@ class PaymentProcessor:
         card_hash = hashlib.sha256(card_number.encode()).hexdigest()
 
         # Create Payment instance
-        payment = Payment.objects.create(
-            order=order,
-            amount=order.amount,
-            status=status,
-            card_hash=card_hash,
-            created_at=timezone.now()
-        )
-
+        with transaction.atomic():
+            payment = Payment.objects.create(
+                order=order,
+                amount=order.amount,
+                status=status,
+                card_hash=card_hash,
+            )
+        WebhookHandler.send_webhook(payment, payment.order.merchant)
         return payment, True
 
     @staticmethod
@@ -73,8 +77,10 @@ class PaymentProcessor:
         capture_success = random.random() < 0.95
         
         if capture_success:
-            payment.status = 'captured'
-            payment.save()
+            with transaction.atomic():
+                payment.status = 'captured'
+                payment.save()
+                WebhookHandler.send_webhook(payment, payment.order.merchant)
             return True
         
         # Capture failed - could set status to 'capture_failed' or keep 'authorized'
@@ -105,15 +111,19 @@ class PaymentProcessor:
         Returns:
             bool: True if refund succeeds, False otherwise
         """
+        if payment.status != 'captured':
+            return False
         # Simulate refund processing (90% success rate)
         try:
             refund_success = random.random() < 0.90
 
             if refund_success:
-                payment.full_refund()
-                WebhookHandler.send_webhook(payment, payment.order.merchant)
+                with transaction.atomic():
+                    payment.full_refund()
+                    WebhookHandler.send_webhook(payment, payment.order.merchant)
                 return True
-        except ValueError:
+        except Exception as e:
+            logging.error(e)
             return False
 
 
@@ -128,7 +138,10 @@ class WebhookHandler:
         Returns:
             bool: True if webhook sent successfully (mocked), False otherwise
         """
+        print("yup:  here i was ")
+        print(f"webhook url : {merchant.webhook_url}")
         if not merchant.webhook_url:
+            print(f"payment id : {payment.id} \n merchant id : {merchant.id}")
             # Log failure if no webhook URL
             WebhookLog.objects.create(
                 payment=payment,
@@ -139,41 +152,7 @@ class WebhookHandler:
             )
             return False
 
-        # Mock webhook payload
-        payload = {
-            'event': 'payment.' + payment.status,
-            'payment_id': str(payment.payment_id),
-            'order_id': str(payment.order.order_id),
-            'amount': str(payment.amount),
-            'currency': payment.order.currency,
-            'status': payment.status,
-            'created_at': payment.created_at.isoformat()
-        }
-
-        try:
-            # Simulate webhook request (80% success rate for mock)
-            mock_response_status = 200 if random.random() < 0.8 else 500
-            mock_response_text = (
-                '{"status": "success"}' if mock_response_status == 200
-                else '{"error": "Webhook endpoint failed"}'
-            )
-
-            # Log webhook attempt
-            WebhookLog.objects.create(
-                payment=payment,
-                payload=payload,
-                status='sent' if mock_response_status == 200 else 'failed',
-                response=mock_response_text,
-                created_at=timezone.now()
-            )
-            return mock_response_status == 200
-        except Exception as e:
-            # Log any unexpected errors
-            WebhookLog.objects.create(
-                payment=payment,
-                payload=payload,
-                status='failed',
-                response=str(e),
-                created_at=timezone.now()
-            )
-            return False
+        # Trigger the async task (no loop here—the task won't call back)
+        print(f"payment id : {payment.id} \n merchant id : {merchant.id}")
+        send_webhook_task.delay(payment.id, merchant.id)
+        return True  # Return immediately, assuming the task will handle it

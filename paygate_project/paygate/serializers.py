@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import User, Merchant , Order, Payment, WebhookLog
+import uuid
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
@@ -39,6 +40,12 @@ class MerchantSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         user_data = validated_data.pop('user')
         user = UserSerializer().create(user_data)
+
+        webhook_url = validated_data.get('webhook_url')
+        if not webhook_url:
+            unique_token = uuid.uuid4().hex
+            webhook_url = f"https://yourdomain.com/webhook/{unique_token}"
+            validated_data['webhook_url'] = webhook_url
         merchant = Merchant.objects.create(user=user, **validated_data)
         return merchant
 

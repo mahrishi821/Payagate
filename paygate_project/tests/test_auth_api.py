@@ -41,10 +41,10 @@ class TestMerchantRegistrationAPI:
             },
             'webhook_url': 'https://example.com/webhook'
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_201_CREATED
+
+        assert response.status_code == 200
         response_data = parse_response(response)
         assert response_data['success'] is True
         assert response_data['message'] == 'Merchant registered successfully'
@@ -52,7 +52,7 @@ class TestMerchantRegistrationAPI:
         assert 'api_key' in response_data['data']
         assert response_data['data']['email'] == 'merchant@example.com'
         assert response_data['data']['role'] == 'merchant'
-        
+
         # Verify user and merchant were created
         assert User.objects.filter(email='merchant@example.com').exists()
         merchant = Merchant.objects.get(user__email='merchant@example.com')
@@ -63,10 +63,10 @@ class TestMerchantRegistrationAPI:
         data = {
             'webhook_url': 'https://example.com/webhook'
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        assert response.status_code == 200
         response_data = parse_response(response)
         assert response_data['success'] is False
 
@@ -79,10 +79,10 @@ class TestMerchantRegistrationAPI:
                 'password': 'testpass123'
             }
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        assert response.status_code == 200
         response_data = parse_response(response)
         assert response_data['success'] is False
 
@@ -90,7 +90,7 @@ class TestMerchantRegistrationAPI:
         """Test registration with duplicate email."""
         # Create existing user
         UserFactory(email='existing@example.com')
-        
+
         data = {
             'user': {
                 'email': 'existing@example.com',
@@ -98,10 +98,10 @@ class TestMerchantRegistrationAPI:
                 'password': 'testpass123'
             }
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        assert response.status_code == 200
         response_data = parse_response(response)
         assert response_data['success'] is False
 
@@ -114,16 +114,40 @@ class TestMerchantRegistrationAPI:
                 'password': 'testpass123'
             }
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_201_CREATED
+
+        assert response.status_code == 200
         assert 'refresh_token' in response.cookies
-        
+
         cookie = response.cookies['refresh_token']
         assert cookie['httponly'] is True
         assert cookie['samesite'] == 'Strict'
 
+@pytest.mark.django_db
+class TestAdminRegistrationAPI:
+    def setup_method(self):
+        self.client = APIClient()
+        self.url = '/paygate/api/v1/auth/register-admin/'
+        self.admin_user = AdminUserFactory()
+        self.client.force_authenticate(user=self.admin_user)
+
+    def test_register_admin_success(self):
+        data = {
+            'user': {
+                'email': 'newadmin@example.com',
+                'name': 'New Admin',
+                'password': 'adminpass123'
+            }
+        }
+        response = self.client.post(self.url, data, format='json')
+        assert response.status_code == 200
+        response_data = parse_response(response)
+        assert response_data['success'] is True
+        assert 'access' in response_data['data']
+        assert response_data['data']['role'] == 'admin'
+        assert User.objects.filter(email='newadmin@example.com', is_staff=True).exists()
+        assert 'refresh_token' in response.cookies
 
 @pytest.mark.django_db
 class TestLoginAPI:
@@ -133,13 +157,13 @@ class TestLoginAPI:
         """Set up test client for each test."""
         self.client = APIClient()
         self.url = '/paygate/api/v1/auth/token/'
-        
+
         # Create test users
         self.merchant_user = UserFactory(email='merchant@example.com')
         self.merchant_user.set_password('testpass123')
         self.merchant_user.save()
         self.merchant = MerchantFactory(user=self.merchant_user)
-        
+
         self.admin_user = AdminUserFactory(email='admin@example.com')
         self.admin_user.set_password('adminpass123')
         self.admin_user.save()
@@ -150,10 +174,10 @@ class TestLoginAPI:
             'email': 'merchant@example.com',
             'password': 'testpass123'
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_200_OK
+
+        assert response.status_code == 200
         response_data = parse_response(response)
         assert response_data['success'] is True
         assert response_data['message'] == 'Login successful'
@@ -168,10 +192,10 @@ class TestLoginAPI:
             'email': 'admin@example.com',
             'password': 'adminpass123'
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_200_OK
+
+        assert response.status_code == 200
         response_data = parse_response(response)
         assert response_data['success'] is True
         assert response_data['data']['role'] == 'admin'
@@ -183,10 +207,10 @@ class TestLoginAPI:
             'email': 'merchant@example.com',
             'password': 'wrongpassword'
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        assert response.status_code == 200
         response_data = parse_response(response)
         assert response_data['success'] is False
         assert response_data['exception']['code'] == 1001
@@ -197,10 +221,10 @@ class TestLoginAPI:
             'email': 'nonexistent@example.com',
             'password': 'testpass123'
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        assert response.status_code == 200
         response_data = parse_response(response)
         assert response_data['success'] is False
 
@@ -210,15 +234,15 @@ class TestLoginAPI:
             'email': 'merchant@example.com',
             'password': 'testpass123'
         }
-        
+
         response = self.client.post(self.url, data, format='json')
-        
-        assert response.status_code == status.HTTP_200_OK
+
+        assert response.status_code == 200
         assert 'refresh_token' in response.cookies
-        
+
         cookie = response.cookies['refresh_token']
         assert cookie['httponly'] is True
-        assert cookie['samesite'] == 'Strict'
+        assert cookie['samesite'] == 'None'
 
 
 @pytest.mark.django_db
@@ -236,10 +260,10 @@ class TestTokenRefreshAPI:
         """Test successful token refresh."""
         # Set refresh token cookie
         self.client.cookies['refresh_token'] = str(self.refresh_token)
-        
+
         response = self.client.post(self.url)
-        
-        assert response.status_code == status.HTTP_200_OK
+
+        assert response.status_code == 200
         response_data = parse_response(response)
         assert response_data['success'] is True
         assert 'access' in response_data['data']
@@ -247,24 +271,24 @@ class TestTokenRefreshAPI:
     def test_refresh_token_missing_cookie(self):
         """Test token refresh without refresh token cookie."""
         response = self.client.post(self.url)
-        
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        assert response.status_code == 200
         response_data = parse_response(response)
         assert response_data['success'] is False
-        assert 'No valid refresh token found' in response_data['exception']['message']
+        assert 'No refresh token provided' in response_data['exception']['message']
 
     def test_refresh_token_invalid_token(self):
         """Test token refresh with invalid token."""
         self.client.cookies['refresh_token'] = 'invalid-token'
-        
+
         response = self.client.post(self.url)
-        
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+        assert response.status_code == 200
         response_data = parse_response(response)
         assert response_data['success'] is False
 
 
-@pytest.mark.django_db 
+@pytest.mark.django_db
 class TestLogoutAPI:
     """Test logout endpoint."""
 
@@ -279,14 +303,14 @@ class TestLogoutAPI:
         """Test successful logout."""
         self.client.force_authenticate(user=self.user)
         self.client.cookies['refresh_token'] = str(self.refresh_token)
-        
+
         response = self.client.post(self.url)
-        
-        assert response.status_code == status.HTTP_200_OK
+
+        assert response.status_code == 200
         response_data = parse_response(response)
         assert response_data['success'] is True
         assert response_data['message'] == 'Logout successful'
-        
+
         # Check that refresh_token cookie is deleted
         assert 'refresh_token' in response.cookies
         assert response.cookies['refresh_token'].value == ''
@@ -294,21 +318,21 @@ class TestLogoutAPI:
     def test_logout_requires_authentication(self):
         """Test that logout requires authentication."""
         self.client.cookies['refresh_token'] = str(self.refresh_token)
-        
+
         response = self.client.post(self.url)
-        
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+        assert response.status_code == 401
 
     def test_logout_missing_refresh_token(self):
         """Test logout without refresh token cookie."""
         self.client.force_authenticate(user=self.user)
-        
+
         response = self.client.post(self.url)
-        
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        assert response.status_code == 200
         response_data = parse_response(response)
         assert response_data['success'] is False
-        assert response_data['exception']['code'] == 1011
+        assert response_data['exception']['code'] == 1040
 
 
 @pytest.mark.django_db
@@ -330,39 +354,39 @@ class TestAuthenticationFlow:
             },
             'webhook_url': 'https://example.com/webhook'
         }
-        
+
         register_response = self.client.post(
-            '/paygate/api/v1/auth/register/', 
-            register_data, 
+            '/paygate/api/v1/auth/register/',
+            register_data,
             format='json'
         )
-        assert register_response.status_code == status.HTTP_201_CREATED
-        
+        assert register_response.status_code == 200
+
         # 2. Login with registered credentials
         login_data = {
             'email': 'flowtest@example.com',
             'password': 'flowpass123'
         }
-        
+
         login_response = self.client.post(
-            '/paygate/api/v1/auth/token/', 
-            login_data, 
+            '/paygate/api/v1/auth/token/',
+            login_data,
             format='json'
         )
-        assert login_response.status_code == status.HTTP_200_OK
-        
+        assert login_response.status_code == 200
+
         # Extract access token
         login_data = parse_response(login_response)
         access_token = login_data['data']['access']
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
-        
+
         # 3. Use refresh token
         refresh_response = self.client.post('/paygate/api/v1/auth/refresh/')
-        assert refresh_response.status_code == status.HTTP_200_OK
-        
+        assert refresh_response.status_code == 200
+
         # 4. Logout
         logout_response = self.client.post('/paygate/api/v1/auth/logout/')
-        assert logout_response.status_code == status.HTTP_200_OK
+        assert logout_response.status_code == 200
 
     def test_authentication_required_endpoints(self):
         """Test that protected endpoints require authentication."""
@@ -372,7 +396,7 @@ class TestAuthenticationFlow:
             '/paygate/api/v1/payments/',
             '/paygate/api/v1/refunds/',
         ]
-        
+
         for endpoint in protected_endpoints:
             response = self.client.post(endpoint)
-            assert response.status_code == status.HTTP_401_UNAUTHORIZED
+            assert response.status_code == 401

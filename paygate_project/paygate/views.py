@@ -13,13 +13,18 @@ from .services import WebhookHandler, PaymentProcessor
 from rest_framework.decorators import action
 from django.db.models import Count, Q, Sum
 from .utils.permissions import IsMerchantUser
+from django.views.decorators.csrf import csrf_exempt
+from .utils.mixins import RateLimitedMixin
+from .utils.helpers import get_merchant_from_user
 import uuid
+from .utils.error_codes_constants import ErrorCodes, get_error_message
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
 
-    @method_decorator(ratelimit(key='ip', rate='5/m', block=True,method='POST'), name='dispatch')
+
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         try:
@@ -47,17 +52,15 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             return response
         except Exception as e:
             return JSONResponseSender.send_error(
-                1001,
-                'Login failed',
-                str(e),
-                None,
-                400
+                code=ErrorCodes.LOGIN_FAILED,
+                message=get_error_message(ErrorCodes.LOGIN_FAILED),
+                description=str(e),
             )
 
-class RegisterView(APIView):
+class RegisterView(RateLimitedMixin,APIView):
     permission_classes = [AllowAny]
 
-    @method_decorator(ratelimit(key='ip', rate='5/m', block=True,method='POST'), name='dispatch')
+
     def post(self, request):
         serializer = MerchantSerializer(data=request.data)
         if serializer.is_valid():
@@ -73,7 +76,6 @@ class RegisterView(APIView):
                     'role': 'merchant'
                 },
                 message='Merchant registered successfully',
-                status=201
             )
             response.set_cookie(
                 key='refresh_token',
@@ -85,10 +87,9 @@ class RegisterView(APIView):
             )
             return response
         return JSONResponseSender.send_error(
-            1002,
-            message='Registration failed',
+            ErrorCodes.REGISTRATION_FAILED,
+            message=get_error_message(ErrorCodes.REGISTRATION_FAILED),
             description=str(serializer.errors),
-            status=400
         )
 
 class RegisterAdminView(APIView):
@@ -98,10 +99,9 @@ class RegisterAdminView(APIView):
         user_data = request.data.get('user')
         if not user_data:
             return JSONResponseSender.send_error(
-                code=1003,
-                message='Invalid input',
+                code=ErrorCodes.ADMIN_REG_MISSING_DATA,
+                message=get_error_message(ErrorCodes.ADMIN_REG_MISSING_DATA),
                 description='User data required',
-                status=400
             )
         user_serializer = UserSerializer(data=user_data)
         if user_serializer.is_valid():
@@ -122,7 +122,6 @@ class RegisterAdminView(APIView):
                     'role': 'admin'
                 },
                 message='Admin registered successfully',
-                status=201
             )
             response.set_cookie(
                 key='refresh_token',
@@ -133,21 +132,19 @@ class RegisterAdminView(APIView):
                 max_age=7*24*60*60
             )
             return response
-        return JSONResponseSender.send_error(500,'Admin registration failed',str(user_serializer.errors),
-            status=400
+        return JSONResponseSender.send_error(ErrorCodes.ADMIN_REG_FAILED,'Admin registration failed',str(user_serializer.errors),
         )
 
-class CustomTokenRefreshView(TokenRefreshView):
+class CustomTokenRefreshView(RateLimitedMixin,TokenRefreshView):
 
-    @method_decorator(ratelimit(key='ip', rate='5/m', block=True,method='POST'), name='dispatch')
+
     def post(self, request, *args, **kwargs):
         refresh_token = request.COOKIES.get('refresh_token')
         if not refresh_token:
             return JSONResponseSender.send_error(
-                code=400,
-                message='No valid refresh token found in cookie.',
+                code=ErrorCodes.TOKEN_REFRESH_NO_TOKEN,
+                message=get_error_message(ErrorCodes.TOKEN_REFRESH_NO_TOKEN),
                 description='no_refresh_token',
-                status=400
             )
         try:
             # Create a serializer instance with the refresh token from cookie
@@ -156,32 +153,29 @@ class CustomTokenRefreshView(TokenRefreshView):
             return JSONResponseSender.send_success(serializer.validated_data)
         except TokenError as e:
             return JSONResponseSender.send_error(
-                code=401,
-                message=str(e),
+                code=ErrorCodes.TOKEN_REFRESH_INVALID,
+                message=get_error_message(ErrorCodes.TOKEN_REFRESH_INVALID),
                 description='token_not_valid',
-                status=401
             )
         except Exception as e:
             return JSONResponseSender.send_error(
-                code=400,
-                message=str(e),
+                code=ErrorCodes.TOKEN_REFRESH_INVALID,
+                message=get_error_message(ErrorCodes.TOKEN_REFRESH_INVALID),
                 description='token_not_valid',
-                status=400
             )
 
 
-class LogoutView(APIView):
+class LogoutView(RateLimitedMixin,APIView):
     permission_classes = [IsAuthenticated]
 
-    @method_decorator(ratelimit(key='ip', rate='5/m', block=True, method='POST'), name='dispatch')
+
     def post(self, request):
         refresh_token = request.COOKIES.get('refresh_token')
         if not refresh_token:
             return JSONResponseSender.send_error(
-                code=1011,
-                message='Logout failed',
+                code=ErrorCodes.LOGOUT_NO_TOKEN,
+                message=get_error_message(ErrorCodes.LOGOUT_NO_TOKEN),
                 description='No refresh token provided',
-                status=400
             )
 
         try:
@@ -192,7 +186,6 @@ class LogoutView(APIView):
             response = JSONResponseSender.send_success(
                 data={},
                 message='Logout successful',
-                status=200
             )
             response.delete_cookie(
                 key='refresh_token',
@@ -203,41 +196,40 @@ class LogoutView(APIView):
 
         except TokenError as e:
             return JSONResponseSender.send_error(
-                code=1012,
-                message='Logout failed',
+                code=ErrorCodes.LOGOUT_INVALID_TOKEN,
+                message=get_error_message(ErrorCodes.LOGOUT_INVALID_TOKEN),
                 description=f'Invalid or expired refresh token: {str(e)}',
-                status=400
             )
 
         except Exception as e:
             return JSONResponseSender.send_error(
-                code=1013,
-                message='Internal server error',
+                code=ErrorCodes.LOGOUT_SERVER_ERROR,
+                message=get_error_message(ErrorCodes.LOGOUT_SERVER_ERROR),
                 description=str(e),
-                status=500
             )
 
 
-class OrderCreateView(APIView):
+class OrderCreateView(RateLimitedMixin,APIView):
     permission_classes = [IsAuthenticated]
 
-    @method_decorator(ratelimit(key='ip', rate='5/m', block=True, method='POST'), name='dispatch')
     def post(self, request):
         try:
-            merchant = Merchant.objects.get(user=request.user)
-        except Merchant.DoesNotExist:
-            return JSONResponseSender.send_error(
-                code=1008,
-                message='Unauthorized',
-                description='User is not a merchant',
-                status=403
-            )
-        amount = request.data.get('amount')
-        currency = request.data.get('currency', 'INR')
-        try:
-            amount = float(amount)
+            merchant = get_merchant_from_user(request.user)
+            if not merchant:
+                return JSONResponseSender.send_error(ErrorCodes.UNAUTHORIZED_NOT_MERCHANT, get_error_message(ErrorCodes.UNAUTHORIZED_NOT_MERCHANT), "User is not a merchant")
+
+            amount = request.data.get('amount')
+            currency = request.data.get('currency', 'INR')
+            if not amount:
+                return JSONResponseSender.send_error(ErrorCodes.ORDER_MISSING_AMOUNT, get_error_message(ErrorCodes.ORDER_MISSING_AMOUNT), "amount is required")
+            if not currency:
+                return JSONResponseSender.send_error(ErrorCodes.ORDER_MISSING_CURRENCY, get_error_message(ErrorCodes.ORDER_MISSING_CURRENCY), "currency is required")
+            try:
+                amount = float(amount)
+            except ValueError:
+                return JSONResponseSender.send_error(ErrorCodes.ORDER_INVALID_AMOUNT_FORMAT, get_error_message(ErrorCodes.ORDER_INVALID_AMOUNT_FORMAT), "Invalid amount format")
             if amount <= 0:
-                raise ValueError("Amount must be positive")
+                return JSONResponseSender.send_error(ErrorCodes.ORDER_AMOUNT_NOT_POSITIVE, get_error_message(ErrorCodes.ORDER_AMOUNT_NOT_POSITIVE), "Amount must be positive")
             order = Order.objects.create(
                 merchant=merchant,
                 amount=amount,
@@ -247,24 +239,24 @@ class OrderCreateView(APIView):
             return JSONResponseSender.send_success(
                 data=serializer.data,
                 message='Order created successfully',
-                status=201
             )
-        except (ValueError, TypeError) as e:
+        except Exception as e:
             return JSONResponseSender.send_error(
-                code=1009,
-                message='Invalid input',
+                code=ErrorCodes.INTERNAL_SERVER_ERROR,
+                message=get_error_message(ErrorCodes.INTERNAL_SERVER_ERROR),
                 description=str(e),
-                status=400
             )
 
 
-class InProgressOrdersView(APIView):
+class InProgressOrdersView(RateLimitedMixin,APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         """Return list of only order_id for orders with status='created'"""
         try:
-            merchant = Merchant.objects.get(user=request.user)
+            merchant = get_merchant_from_user(request.user)
+            if not merchant:
+                return JSONResponseSender.send_error(ErrorCodes.UNAUTHORIZED_NOT_MERCHANT, get_error_message(ErrorCodes.UNAUTHORIZED_NOT_MERCHANT), "User is not a merchant")
             order_ids = (
                 Order.objects.filter(merchant=merchant, status='created')
                 .order_by('-created_at')
@@ -276,22 +268,18 @@ class InProgressOrdersView(APIView):
                 message='In-progress order IDs retrieved successfully',
                 )
 
-        except Merchant.DoesNotExist:
-            return JSONResponseSender.send_error(
-                code=1007,
-                message='Unauthorized',
-                description='User is not a merchant',
-                status=403
-            )
         except Exception as e:
-            return JSONResponseSender.send_error("500", str(e), str(e))
+            return JSONResponseSender.send_error(ErrorCodes.INTERNAL_SERVER_ERROR, get_error_message(ErrorCodes.INTERNAL_SERVER_ERROR), str(e))
 
 class CompletedPaymentView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+
         try:
-            merchant = Merchant.objects.get(user=request.user)
+            merchant = get_merchant_from_user(request.user)
+            if not merchant:
+                return JSONResponseSender.send_error(ErrorCodes.UNAUTHORIZED_NOT_MERCHANT, get_error_message(ErrorCodes.UNAUTHORIZED_NOT_MERCHANT), "User is not a merchant")
             # payment_id = (
             #     Payment.objects.filter(order__merchant=merchant, status='captured').order_by('-created_at').values_list('payment_id', flat=True)
             # )
@@ -301,122 +289,123 @@ class CompletedPaymentView(APIView):
             serializer = PaymentSerializer(payments, many=True)
             return JSONResponseSender.send_success(serializer.data, message='Payment completed successfully')
         except Exception as e:
-            return JSONResponseSender.send_error("500", str(e), str(e))
+            return JSONResponseSender.send_error(ErrorCodes.INTERNAL_SERVER_ERROR, get_error_message(ErrorCodes.INTERNAL_SERVER_ERROR), str(e))
 
 class PaymentProcessView(APIView):
     permission_classes = [IsAuthenticated]
 
-    # @method_decorator(ratelimit(key='ip', rate='5/m', block=True, method='POST'), name='dispatch')
+
     def post(self, request):
 
         order_id = request.data.get('order_id')
         card_details = request.data.get('card_details', {})
 
         try:
-            merchant = Merchant.objects.get(user=request.user)
+            merchant = get_merchant_from_user(request.user)
+            if not merchant:
+                return JSONResponseSender.send_error(ErrorCodes.UNAUTHORIZED_NOT_MERCHANT, get_error_message(ErrorCodes.UNAUTHORIZED_NOT_MERCHANT), "User is not a merchant")
+
             order = Order.objects.get(order_id=order_id, merchant=merchant)
             payment, success = PaymentProcessor.process_payment(order, card_details)
 
             if not payment:
                 return JSONResponseSender.send_error(
-                    code=1011,
-                    message='Payment failed',
+                    ErrorCodes.PAYMENT_INVALID_CARD,
+                    message=get_error_message(ErrorCodes.PAYMENT_INVALID_CARD),
                     description='Invalid card details',
-                    status=400
                 )
 
             if success and payment.status=='captured':
                 order.status = 'paid'
-                order.save()
-                WebhookHandler.send_webhook(payment, merchant)
+
             elif success:
-                order.status = 'In-process'
+                order.status = 'created'
             else:
                 order.status = 'failed'
-                order.save()
+            order.save()
             serializer = PaymentSerializer(payment)
+
+            # if success:
+            #     WebhookHandler.send_webhook(payment, merchant)
+
             return JSONResponseSender.send_success(
                 data=serializer.data,
                 message='Payment processed successfully',
-                status=201
             )
         except Order.DoesNotExist:
             return JSONResponseSender.send_error(
-                code=1012,
-                message='Not found',
+                ErrorCodes.ORDER_NOT_FOUND,
+                message=get_error_message(ErrorCodes.ORDER_NOT_FOUND),
                 description='Order not found',
-                status=404
             )
         except Exception as e:
             print(str(e))
-            return JSONResponseSender.send_error("500",str(e),str(e))
+            return JSONResponseSender.send_error(ErrorCodes.INTERNAL_SERVER_ERROR,get_error_message(ErrorCodes.INTERNAL_SERVER_ERROR),str(e))
 
 
-class RefundProcessView(APIView):
+class RefundProcessView(RateLimitedMixin,APIView):
     permission_classes = [IsAuthenticated]
 
-    @method_decorator(ratelimit(key='ip', rate='5/m', block=True, method='POST'), name='dispatch')
+
     def post(self, request):
 
         try:
-            merchant = Merchant.objects.get(user=request.user)
-        except Merchant.DoesNotExist:
-            return JSONResponseSender.send_error(
-                code=1013,
-                message='Unauthorized',
-                description='User is not a merchant',
-                status=403
-            )
-        payment_id = request.data.get('payment_id')
-        try:
+            merchant = get_merchant_from_user(request.user)
+            if not merchant:
+                return JSONResponseSender.send_error(ErrorCodes.UNAUTHORIZED_NOT_MERCHANT, get_error_message(ErrorCodes.UNAUTHORIZED_NOT_MERCHANT), "User is not a merchant")
+
+            payment_id = request.data.get('payment_id')
+
             payment = Payment.objects.get(payment_id=payment_id, order__merchant=merchant)
-            if PaymentProcessor.process_refund(payment):
+            success = PaymentProcessor.process_refund(payment)
+            if success:
                 WebhookHandler.send_webhook(payment, merchant)
                 return JSONResponseSender.send_success(
                     data={'status': 'refunded'},
                     message='Refund processed successfully',
-                    status=200
                 )
             return JSONResponseSender.send_error(
-                code=1014,
-                message='Refund failed',
+                ErrorCodes.REFUND_PROCESSING_FAILED,
+                message=get_error_message(ErrorCodes.REFUND_PROCESSING_FAILED),
                 description='Refund processing failed',
-                status=400
             )
-        except Payment.DoesNotExist:
+        except Exception as e:
             return JSONResponseSender.send_error(
-                code=1015,
-                message='Not found',
-                description='Payment not found',
-                status=404
+                ErrorCodes.REFUND_PAYMENT_NOT_FOUND,
+                message=get_error_message(ErrorCodes.REFUND_PAYMENT_NOT_FOUND),
+                description=str(e),
             )
+
 
 
 
 class AdminStatsView(APIView):
     permission_classes = [IsAdminUser]
 
-    # @method_decorator(ratelimit(key='ip', rate='5/m', block=True, method='POST'), name='dispatch')
+
     def get(self, request):
         try:
             merchant_id = request.query_params.get('merchant_id')
-            print(f'merchant_id: {merchant_id}')
+
             if merchant_id:
                 try:
-                    # Validate UUID
-                    # uuid_obj = uuid.UUID(merchant_id)
                     merchant = Merchant.objects.get(id=merchant_id)
-                except (ValueError, Merchant.DoesNotExist):
+                except ValueError:
                     return JSONResponseSender.send_error(
-                        code=1019,
-                        message='Invalid merchant ID',
-                        description='Merchant not found or invalid UUID',
-                        status=404
+                        ErrorCodes.STATS_INVALID_MERCHANT_ID,
+                        message=get_error_message(ErrorCodes.STATS_INVALID_MERCHANT_ID),
+                        description='Invalid merchant ID',
+                    )
+                except Merchant.DoesNotExist:
+                    return JSONResponseSender.send_error(
+                        ErrorCodes.STATS_MERCHANT_NOT_FOUND,
+                        message=get_error_message(ErrorCodes.STATS_MERCHANT_NOT_FOUND),
+                        description='Merchant not found',
                     )
                 # Filter metrics by merchant_id
                 total_orders = Order.objects.filter(merchant=merchant).count()
                 total_successful_payments = Payment.objects.filter(
-                    order__merchant=merchant, status__in=['captured']
+                    order__merchant=merchant, status__in=['captured', 'refunded']
                 ).count()
                 total_captured_payments = Payment.objects.filter(
                     order__merchant=merchant, status='captured'
@@ -466,7 +455,6 @@ class AdminStatsView(APIView):
                         'total_canceled_payments': total_canceled_payments,
                     },
                     message='Admin statistics retrieved successfully',
-                    status=200
                 )
             # Common metrics (not merchant-specific)
 
@@ -476,29 +464,29 @@ class AdminStatsView(APIView):
 
         except Exception as e:
             return JSONResponseSender.send_error(
-                code=1020,
-                message='Failed to retrieve statistics',
+                ErrorCodes.STATS_RETRIEVAL_FAILED,
+                message=get_error_message(ErrorCodes.STATS_RETRIEVAL_FAILED),
                 description=str(e),
-                status=500
             )
 
 
 class MerchantStatsView(APIView):
     permission_classes = [IsAuthenticated, IsMerchantUser]
 
-    #@method_decorator(ratelimit(key='ip', rate='5/m', block=True, method='GET'), name='dispatch')
+
     def get(self, request):
         try:
-            merchant = Merchant.objects.get(user=request.user)
+            merchant = get_merchant_from_user(request.user)
             if not merchant:
-                return JSONResponseSender.send_error('403','Unauthorized','User is not a merchant')
+                return JSONResponseSender.send_error(ErrorCodes.UNAUTHORIZED_NOT_MERCHANT,get_error_message(ErrorCodes.UNAUTHORIZED_NOT_MERCHANT),'User is not a merchant')
 
             total_orders = Order.objects.filter(merchant=merchant).count()
             total_successful_payments = Payment.objects.filter(
                 order__merchant=merchant, status='captured'
             ).count()
 
-            total_revenue = Payment.objects.filter(order__merchant=merchant,status='captured').aggregate(total=Sum('merchant_payout'))['total'] or 0
+            total_revenue = Payment.objects.filter(order__merchant=merchant,status__in=['captured','refunded']).aggregate(total=Sum('merchant_payout'))['total'] or 0
+            # total_revenue = Payment.objects.filter(order__merchant=merchant).aggregate(total=Sum('merchant_payout'))['total'] or 0
             total_successful_refunds = Payment.objects.filter(
                 order__merchant=merchant, status='refunded'
             ).count()
@@ -518,6 +506,4 @@ class MerchantStatsView(APIView):
                 }
             )
         except Exception as e:
-            return JSONResponseSender.send_error("500","Failed to retrieve merchant statistics",str(e))
-
-
+            return JSONResponseSender.send_error(ErrorCodes.STATS_RETRIEVAL_FAILED,get_error_message(ErrorCodes.STATS_RETRIEVAL_FAILED),str(e))

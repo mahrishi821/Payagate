@@ -3,6 +3,7 @@ Factory classes for creating test data.
 """
 import factory
 import uuid
+from decimal import Decimal
 from factory.django import DjangoModelFactory
 from django.contrib.auth import get_user_model
 from paygate.models import Merchant, Order, Payment, WebhookLog
@@ -71,6 +72,10 @@ class PaymentFactory(DjangoModelFactory):
     amount = factory.LazyAttribute(lambda obj: obj.order.amount)
     status = 'pending'
     card_hash = factory.Faker('sha256')
+    commission_percentage=Decimal('2.00')
+    commission_amount=None
+    merchant_payout=None
+    refunded_amount=Decimal('0.00')
 
 
 class WebhookLogFactory(DjangoModelFactory):
