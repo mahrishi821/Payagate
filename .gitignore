@@ -15,7 +15,7 @@ ENV/
 env/
 env.bak/
 .env
-
+paygate_project/.env
 # Distribution / packaging
 build/
 develop-eggs/
