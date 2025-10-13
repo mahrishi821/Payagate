@@ -72,17 +72,17 @@ class PaymentProcessor:
         """
         if payment.status != 'authorized':
             return False
-        
+
         # Simulate capture processing (95% success rate)
         capture_success = random.random() < 0.95
-        
+
         if capture_success:
             with transaction.atomic():
                 payment.status = 'captured'
                 payment.save()
                 WebhookHandler.send_webhook(payment, payment.order.merchant)
             return True
-        
+
         # Capture failed - could set status to 'capture_failed' or keep 'authorized'
         return False
 
@@ -97,7 +97,7 @@ class PaymentProcessor:
         """
         if payment.status != 'authorized':
             return False
-        
+
         payment.status = 'voided'
         payment.save()
         return True

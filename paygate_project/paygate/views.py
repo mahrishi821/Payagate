@@ -16,6 +16,10 @@ from .utils.permissions import IsMerchantUser
 from django.views.decorators.csrf import csrf_exempt
 from .utils.mixins import RateLimitedMixin
 from .utils.helpers import get_merchant_from_user
+from django.utils import timezone
+from django.db.models.functions import TruncDate
+import  requests
+from datetime import timedelta
 import uuid
 from .utils.error_codes_constants import ErrorCodes, get_error_message
 
@@ -379,88 +383,544 @@ class RefundProcessView(RateLimitedMixin,APIView):
 
 
 
+# class AdminStatsView(APIView):
+#     permission_classes = [IsAdminUser]
+#
+#
+#     def get(self, request):
+#         try:
+#             merchant_id = request.query_params.get('merchant_id')
+#
+#             if merchant_id:
+#                 try:
+#                     merchant = Merchant.objects.get(id=merchant_id)
+#                 except ValueError:
+#                     return JSONResponseSender.send_error(
+#                         ErrorCodes.STATS_INVALID_MERCHANT_ID,
+#                         message=get_error_message(ErrorCodes.STATS_INVALID_MERCHANT_ID),
+#                         description='Invalid merchant ID',
+#                     )
+#                 except Merchant.DoesNotExist:
+#                     return JSONResponseSender.send_error(
+#                         ErrorCodes.STATS_MERCHANT_NOT_FOUND,
+#                         message=get_error_message(ErrorCodes.STATS_MERCHANT_NOT_FOUND),
+#                         description='Merchant not found',
+#                     )
+#                 # Filter metrics by merchant_id
+#                 total_orders = Order.objects.filter(merchant=merchant).count()
+#                 total_successful_payments = Payment.objects.filter(
+#                     order__merchant=merchant, status__in=['captured', 'refunded']
+#                 ).count()
+#                 total_captured_payments = Payment.objects.filter(
+#                     order__merchant=merchant, status='captured'
+#                 ).count()
+#                 total_authorized_payments = Payment.objects.filter(
+#                     order__merchant=merchant, status='authorized'
+#                 ).count()
+#                 total_successful_refunds = Payment.objects.filter(
+#                     order__merchant=merchant, status='refunded'
+#                 ).count()
+#                 total_canceled_payments = Payment.objects.filter(
+#                     order__merchant=merchant, status='failed'
+#                 ).count()
+#
+#                 return JSONResponseSender.send_success(
+#                     data={
+#                         'user__email': merchant.user.email,
+#                         'order_count': total_orders,
+#                         'payment_count': total_successful_payments,
+#                         'successful_payments': total_successful_payments,
+#                         'authorized_payments': total_authorized_payments,
+#                         'captured_payments': total_captured_payments,
+#                         'successful_refunds': total_successful_refunds,
+#                         'canceled_payments': total_canceled_payments
+#                     }
+#                 )
+#             else:
+#                 total_merchants = Merchant.objects.count()
+#                 total_admins = User.objects.filter(is_staff=True).count()
+#                 total_commission = Payment.objects.aggregate(total=Sum('commission_amount'))['total'] or 0
+#                 total_orders = Order.objects.count()
+#                 total_successful_payments = Payment.objects.filter(status__in=['captured','refunded']).count()
+#                 total_captured_payments = Payment.objects.filter(status='captured').count()
+#                 total_authorized_payments = Payment.objects.filter(status='authorized').count()
+#                 total_successful_refunds = Payment.objects.filter(status='refunded').count()
+#                 total_canceled_payments = Payment.objects.filter(status='failed').count()
+#                 return JSONResponseSender.send_success(
+#                     data={
+#                         'total_merchants': total_merchants,
+#                         'total_admins': total_admins,
+#                         'total_orders': total_orders,
+#                         'total_commission': total_commission,
+#                         'total_successful_payments': total_successful_payments,
+#                         'total_authorized_payments': total_authorized_payments,
+#                         'total_captured_payments': total_captured_payments,
+#                         'total_successful_refunds': total_successful_refunds,
+#                         'total_canceled_payments': total_canceled_payments,
+#                     },
+#                     message='Admin statistics retrieved successfully',
+#                 )
+#             # Common metrics (not merchant-specific)
+#
+#             # total_merchants = Merchant.objects.count()
+#             # total_admins = User.objects.filter(is_staff=True).count()
+#
+#
+#         except Exception as e:
+#             return JSONResponseSender.send_error(
+#                 ErrorCodes.STATS_RETRIEVAL_FAILED,
+#                 message=get_error_message(ErrorCodes.STATS_RETRIEVAL_FAILED),
+#                 description=str(e),
+#             )
+
+
+# class MerchantStatsView(APIView):
+#     permission_classes = [IsAuthenticated, IsMerchantUser]
+#     days = int(requests.GET.get('days', 30))
+#     start_date = timezone.now() - timedelta(days=days)
+#
+#     def get(self, request):
+#         try:
+#             merchant = get_merchant_from_user(request.user)
+#             if not merchant:
+#                 return JSONResponseSender.send_error(ErrorCodes.UNAUTHORIZED_NOT_MERCHANT,get_error_message(ErrorCodes.UNAUTHORIZED_NOT_MERCHANT),'User is not a merchant')
+#
+#             total_orders = Order.objects.filter(merchant=merchant).count()
+#             total_successful_payments = Payment.objects.filter(
+#                 order__merchant=merchant, status='captured'
+#             ).count()
+#
+#             total_revenue = Payment.objects.filter(order__merchant=merchant,status__in=['captured','refunded']).aggregate(total=Sum('merchant_payout'))['total'] or 0
+#             # total_revenue = Payment.objects.filter(order__merchant=merchant).aggregate(total=Sum('merchant_payout'))['total'] or 0
+#             total_successful_refunds = Payment.objects.filter(
+#                 order__merchant=merchant, status='refunded'
+#             ).count()
+#             total_canceled_payments = Payment.objects.filter(
+#                 order__merchant=merchant, status='failed'
+#             ).count()
+#             total_authorized_payments = Payment.objects.filter(order__merchant=merchant, status='authorized').count()
+#
+#             return JSONResponseSender.send_success(
+#                 data={
+#                     'total_orders': total_orders,
+#                     'total_revenue': total_revenue,
+#                     'successful_payments': total_successful_payments,
+#                     'successful_refunds': total_successful_refunds,
+#                     'canceled_payments': total_canceled_payments,
+#                     'authorized_payments': total_authorized_payments,
+#                 }
+#             )
+#         except Exception as e:
+#             return JSONResponseSender.send_error(ErrorCodes.STATS_RETRIEVAL_FAILED,get_error_message(ErrorCodes.STATS_RETRIEVAL_FAILED),str(e))
+
+
+class MerchantStatsView(APIView):
+    permission_classes = [IsAuthenticated, IsMerchantUser]
+
+    def get(self, request):
+        try:
+            merchant = get_merchant_from_user(request.user)
+            if not merchant:
+                return JSONResponseSender.send_error(
+                    ErrorCodes.UNAUTHORIZED_NOT_MERCHANT,
+                    get_error_message(ErrorCodes.UNAUTHORIZED_NOT_MERCHANT),
+                    'User is not a merchant'
+                )
+
+            # Get date range parameter (default: last 30 days)
+            days = int(request.GET.get('days', 30))
+            current_period_start = timezone.now() - timedelta(days=days)
+            previous_period_start = timezone.now() - timedelta(days=days * 2)
+            previous_period_end = current_period_start
+
+            # CURRENT PERIOD STATS
+            total_orders = Order.objects.filter(
+                merchant=merchant,
+                created_at__gte=current_period_start
+            ).count()
+
+            total_successful_payments = Payment.objects.filter(
+                order__merchant=merchant,
+                status='captured',
+                created_at__gte=current_period_start
+            ).count()
+
+            total_revenue = Payment.objects.filter(
+                order__merchant=merchant,
+                status__in=['captured', 'refunded'],
+                created_at__gte=current_period_start
+            ).aggregate(total=Sum('merchant_payout'))['total'] or 0
+
+            total_successful_refunds = Payment.objects.filter(
+                order__merchant=merchant,
+                status='refunded',
+                created_at__gte=current_period_start
+            ).count()
+
+            total_canceled_payments = Payment.objects.filter(
+                order__merchant=merchant,
+                status='failed',
+                created_at__gte=current_period_start
+            ).count()
+
+            total_authorized_payments = Payment.objects.filter(
+                order__merchant=merchant,
+                status='authorized',
+                created_at__gte=current_period_start
+            ).count()
+
+            # PREVIOUS PERIOD STATS (for trend calculation)
+            prev_total_orders = Order.objects.filter(
+                merchant=merchant,
+                created_at__gte=previous_period_start,
+                created_at__lt=previous_period_end
+            ).count()
+
+            prev_total_revenue = Payment.objects.filter(
+                order__merchant=merchant,
+                status__in=['captured', 'refunded'],
+                created_at__gte=previous_period_start,
+                created_at__lt=previous_period_end
+            ).aggregate(total=Sum('merchant_payout'))['total'] or 0
+
+            prev_total_successful_payments = Payment.objects.filter(
+                order__merchant=merchant,
+                status='captured',
+                created_at__gte=previous_period_start,
+                created_at__lt=previous_period_end
+            ).count()
+
+            prev_total_payments = Payment.objects.filter(
+                order__merchant=merchant,
+                created_at__gte=previous_period_start,
+                created_at__lt=previous_period_end
+            ).count()
+
+            prev_conversion_rate = (
+                (prev_total_successful_payments / prev_total_payments * 100)
+                if prev_total_payments > 0 else 0
+            )
+
+            prev_avg_order_value = (
+                prev_total_revenue / prev_total_successful_payments
+                if prev_total_successful_payments > 0 else 0
+            )
+
+            # Time-series data for charts
+            daily_revenue = Payment.objects.filter(
+                order__merchant=merchant,
+                status='captured',
+                created_at__gte=current_period_start
+            ).annotate(
+                date=TruncDate('created_at')
+            ).values('date').annotate(
+                revenue=Sum('merchant_payout'),
+                count=Count('id')
+            ).order_by('date')
+
+            daily_orders = Order.objects.filter(
+                merchant=merchant,
+                created_at__gte=current_period_start
+            ).annotate(
+                date=TruncDate('created_at')
+            ).values('date').annotate(
+                count=Count('id')
+            ).order_by('date')
+
+            # Payment status breakdown (for pie chart)
+            payment_status_breakdown = Payment.objects.filter(
+                order__merchant=merchant,
+                created_at__gte=current_period_start
+            ).values('status').annotate(
+                count=Count('id')
+            ).order_by('-count')
+
+            # Calculate conversion rate
+            total_payments = Payment.objects.filter(
+                order__merchant=merchant,
+                created_at__gte=current_period_start
+            ).count()
+            conversion_rate = (
+                (total_successful_payments / total_payments * 100)
+                if total_payments > 0 else 0
+            )
+
+            # Average order value
+            avg_order_value = (
+                total_revenue / total_successful_payments
+                if total_successful_payments > 0 else 0
+            )
+
+            return JSONResponseSender.send_success(
+                data={
+                    # Summary stats
+                    'total_orders': total_orders,
+                    'total_revenue': str(total_revenue),
+                    'successful_payments': total_successful_payments,
+                    'successful_refunds': total_successful_refunds,
+                    'canceled_payments': total_canceled_payments,
+                    'authorized_payments': total_authorized_payments,
+                    'conversion_rate': round(conversion_rate, 2),
+                    'avg_order_value': str(round(avg_order_value, 2)),
+
+                    # Previous period for trend calculation
+                    'previous_period': {
+                        'total_revenue': str(prev_total_revenue),
+                        'total_orders': prev_total_orders,
+                        'conversion_rate': round(prev_conversion_rate, 2),
+                        'avg_order_value': str(round(prev_avg_order_value, 2)),
+                    },
+
+                    # Time-series data
+                    'daily_revenue': [
+                        {
+                            'date': item['date'].strftime('%Y-%m-%d'),
+                            'revenue': str(item['revenue']),
+                            'count': item['count']
+                        }
+                        for item in daily_revenue
+                    ],
+                    'daily_orders': [
+                        {
+                            'date': item['date'].strftime('%Y-%m-%d'),
+                            'count': item['count']
+                        }
+                        for item in daily_orders
+                    ],
+
+                    # Payment breakdown
+                    'payment_status_breakdown': [
+                        {
+                            'status': item['status'],
+                            'count': item['count']
+                        }
+                        for item in payment_status_breakdown
+                    ]
+                }
+            )
+        except Exception as e:
+            return JSONResponseSender.send_error(
+                ErrorCodes.STATS_RETRIEVAL_FAILED,
+                get_error_message(ErrorCodes.STATS_RETRIEVAL_FAILED),
+                str(e)
+            )
+
+
 class AdminStatsView(APIView):
     permission_classes = [IsAdminUser]
-
 
     def get(self, request):
         try:
             merchant_id = request.query_params.get('merchant_id')
+            days = int(request.GET.get('days', 30))
+            current_period_start = timezone.now() - timedelta(days=days)
+            previous_period_start = timezone.now() - timedelta(days=days * 2)
+            previous_period_end = current_period_start
 
             if merchant_id:
+                # Merchant-specific stats (can be expanded as needed)
                 try:
                     merchant = Merchant.objects.get(id=merchant_id)
-                except ValueError:
-                    return JSONResponseSender.send_error(
-                        ErrorCodes.STATS_INVALID_MERCHANT_ID,
-                        message=get_error_message(ErrorCodes.STATS_INVALID_MERCHANT_ID),
-                        description='Invalid merchant ID',
-                    )
-                except Merchant.DoesNotExist:
+                except (ValueError, Merchant.DoesNotExist):
                     return JSONResponseSender.send_error(
                         ErrorCodes.STATS_MERCHANT_NOT_FOUND,
                         message=get_error_message(ErrorCodes.STATS_MERCHANT_NOT_FOUND),
                         description='Merchant not found',
                     )
-                # Filter metrics by merchant_id
-                total_orders = Order.objects.filter(merchant=merchant).count()
+
+                # Placeholder for merchant-specific stats
+                # TODO: implement similar to platform-wide stats
+
+            else:
+                # PLATFORM-WIDE CURRENT PERIOD
+                total_merchants = Merchant.objects.filter(
+                    created_at__gte=current_period_start
+                ).count()
+                total_admins = User.objects.filter(is_staff=True).count()
+                total_commission = Payment.objects.filter(
+                    status__in=['captured', 'refunded'],
+                    created_at__gte=current_period_start
+                ).aggregate(total=Sum('commission_amount'))['total'] or 0
+
+                total_orders = Order.objects.filter(
+                    created_at__gte=current_period_start
+                ).count()
+
                 total_successful_payments = Payment.objects.filter(
-                    order__merchant=merchant, status__in=['captured', 'refunded']
+                    status__in=['captured', 'refunded'],
+                    created_at__gte=current_period_start
                 ).count()
+
                 total_captured_payments = Payment.objects.filter(
-                    order__merchant=merchant, status='captured'
+                    status='captured',
+                    created_at__gte=current_period_start
                 ).count()
-                total_authorized_payments = Payment.objects.filter(
-                    order__merchant=merchant, status='authorized'
-                ).count()
+
                 total_successful_refunds = Payment.objects.filter(
-                    order__merchant=merchant, status='refunded'
+                    status='refunded',
+                    created_at__gte=current_period_start
                 ).count()
+
                 total_canceled_payments = Payment.objects.filter(
-                    order__merchant=merchant, status='failed'
+                    status='failed',
+                    created_at__gte=current_period_start
                 ).count()
+
+                total_authorized_payments = Payment.objects.filter(
+                    status='authorized',
+                    created_at__gte=current_period_start
+                ).count()
+
+                # Conversion rate
+                total_payments = Payment.objects.filter(
+                    created_at__gte=current_period_start
+                ).count()
+                conversion_rate = (
+                    (total_captured_payments / total_payments * 100)
+                    if total_payments > 0 else 0
+                )
+
+                # Average commission per order
+                avg_commission_per_order = (
+                    total_commission / total_orders if total_orders > 0 else 0
+                )
+
+                # PREVIOUS PERIOD for trends
+                prev_total_merchants = Merchant.objects.filter(
+                    created_at__gte=previous_period_start,
+                    created_at__lt=previous_period_end
+                ).count()
+
+                prev_total_commission = Payment.objects.filter(
+                    status__in=['captured', 'refunded'],
+                    created_at__gte=previous_period_start,
+                    created_at__lt=previous_period_end
+                ).aggregate(total=Sum('commission_amount'))['total'] or 0
+
+                prev_total_orders = Order.objects.filter(
+                    created_at__gte=previous_period_start,
+                    created_at__lt=previous_period_end
+                ).count()
+
+                prev_total_payments = Payment.objects.filter(
+                    created_at__gte=previous_period_start,
+                    created_at__lt=previous_period_end
+                ).count()
+
+                prev_total_captured = Payment.objects.filter(
+                    status='captured',
+                    created_at__gte=previous_period_start,
+                    created_at__lt=previous_period_end
+                ).count()
+
+                prev_conversion_rate = (
+                    (prev_total_captured / prev_total_payments * 100)
+                    if prev_total_payments > 0 else 0
+                )
+
+                prev_avg_commission_per_order = (
+                    prev_total_commission / prev_total_orders if prev_total_orders > 0 else 0
+                )
+
+                # DAILY DATA
+                daily_commission = Payment.objects.filter(
+                    status='captured',
+                    created_at__gte=current_period_start
+                ).annotate(
+                    date=TruncDate('created_at')
+                ).values('date').annotate(
+                    commission=Sum('commission_amount'),
+                    count=Count('id')
+                ).order_by('date')
+
+                daily_orders = Order.objects.filter(
+                    created_at__gte=current_period_start
+                ).annotate(
+                    date=TruncDate('created_at')
+                ).values('date').annotate(count=Count('id')).order_by('date')
+
+                daily_merchants = Merchant.objects.filter(
+                    created_at__gte=current_period_start
+                ).annotate(
+                    date=TruncDate('created_at')
+                ).values('date').annotate(count=Count('id')).order_by('date')
+
+                # PAYMENT STATUS BREAKDOWN
+                payment_status_breakdown = Payment.objects.filter(
+                    created_at__gte=current_period_start
+                ).values('status').annotate(count=Count('id'))
+
+                # TOP MERCHANTS BY COMMISSION
+                top_merchants = Payment.objects.filter(
+                    status__in=['captured', 'refunded'],
+                    created_at__gte=current_period_start
+                ).values(
+                    'order__merchant__user__email',
+                    'order__merchant__user__name'
+                ).annotate(
+                    total_commission=Sum('commission_amount'),
+                    order_count=Count('id')
+                ).order_by('-total_commission')[:10]
 
                 return JSONResponseSender.send_success(
                     data={
-                        'user__email': merchant.user.email,
-                        'order_count': total_orders,
-                        'payment_count': total_successful_payments,
-                        'successful_payments': total_successful_payments,
-                        'authorized_payments': total_authorized_payments,
-                        'captured_payments': total_captured_payments,
-                        'successful_refunds': total_successful_refunds,
-                        'canceled_payments': total_canceled_payments
-                    }
-                )
-            else:
-                total_merchants = Merchant.objects.count()
-                total_admins = User.objects.filter(is_staff=True).count()
-                total_commission = Payment.objects.aggregate(total=Sum('commission_amount'))['total'] or 0
-                total_orders = Order.objects.count()
-                total_successful_payments = Payment.objects.filter(status__in=['captured','refunded']).count()
-                total_captured_payments = Payment.objects.filter(status='captured').count()
-                total_authorized_payments = Payment.objects.filter(status='authorized').count()
-                total_successful_refunds = Payment.objects.filter(status='refunded').count()
-                total_canceled_payments = Payment.objects.filter(status='failed').count()
-                return JSONResponseSender.send_success(
-                    data={
+                        # Summary stats
                         'total_merchants': total_merchants,
                         'total_admins': total_admins,
                         'total_orders': total_orders,
-                        'total_commission': total_commission,
+                        'total_commission': str(total_commission),
                         'total_successful_payments': total_successful_payments,
-                        'total_authorized_payments': total_authorized_payments,
-                        'total_captured_payments': total_captured_payments,
                         'total_successful_refunds': total_successful_refunds,
+                        'total_captured_payments': total_captured_payments,
+                        'conversion_rate': round(conversion_rate, 2),
                         'total_canceled_payments': total_canceled_payments,
+                        'total_authorized_payments': total_authorized_payments,
+                        'avg_commission_per_order': str(round(avg_commission_per_order, 2)),
+
+                        # Previous period
+                        'previous_period': {
+                            'total_commission': str(prev_total_commission),
+                            'total_orders': prev_total_orders,
+                            'conversion_rate': round(prev_conversion_rate, 2),
+                            'total_merchants': prev_total_merchants,
+                            'avg_commission_per_order': str(round(prev_avg_commission_per_order, 2))
+                        },
+
+                        # Time-series
+                        'daily_commission': [
+                            {'date': item['date'].strftime('%Y-%m-%d'),
+                             'commission': str(item['commission']),
+                             'count': item['count']}
+                            for item in daily_commission
+                        ],
+                        'daily_orders': [
+                            {'date': item['date'].strftime('%Y-%m-%d'),
+                             'count': item['count']}
+                            for item in daily_orders
+                        ],
+                        'daily_merchants': [
+                            {'date': item['date'].strftime('%Y-%m-%d'),
+                             'count': item['count']}
+                            for item in daily_merchants
+                        ],
+
+                        'payment_status_breakdown': [
+                            {'status': item['status'], 'count': item['count']}
+                            for item in payment_status_breakdown
+                        ],
+
+                        'top_merchants': [
+                            {
+                                'email': item['order__merchant__user__email'],
+                                'business_name': item['order__merchant__user__name'],
+                                'total_commission': str(item['total_commission']),
+                                'order_count': item['order_count']
+                            }
+                            for item in top_merchants
+                        ],
                     },
                     message='Admin statistics retrieved successfully',
                 )
-            # Common metrics (not merchant-specific)
-
-            # total_merchants = Merchant.objects.count()
-            # total_admins = User.objects.filter(is_staff=True).count()
-
 
         except Exception as e:
             return JSONResponseSender.send_error(
@@ -468,42 +928,3 @@ class AdminStatsView(APIView):
                 message=get_error_message(ErrorCodes.STATS_RETRIEVAL_FAILED),
                 description=str(e),
             )
-
-
-class MerchantStatsView(APIView):
-    permission_classes = [IsAuthenticated, IsMerchantUser]
-
-
-    def get(self, request):
-        try:
-            merchant = get_merchant_from_user(request.user)
-            if not merchant:
-                return JSONResponseSender.send_error(ErrorCodes.UNAUTHORIZED_NOT_MERCHANT,get_error_message(ErrorCodes.UNAUTHORIZED_NOT_MERCHANT),'User is not a merchant')
-
-            total_orders = Order.objects.filter(merchant=merchant).count()
-            total_successful_payments = Payment.objects.filter(
-                order__merchant=merchant, status='captured'
-            ).count()
-
-            total_revenue = Payment.objects.filter(order__merchant=merchant,status__in=['captured','refunded']).aggregate(total=Sum('merchant_payout'))['total'] or 0
-            # total_revenue = Payment.objects.filter(order__merchant=merchant).aggregate(total=Sum('merchant_payout'))['total'] or 0
-            total_successful_refunds = Payment.objects.filter(
-                order__merchant=merchant, status='refunded'
-            ).count()
-            total_canceled_payments = Payment.objects.filter(
-                order__merchant=merchant, status='failed'
-            ).count()
-            total_authorized_payments = Payment.objects.filter(order__merchant=merchant, status='authorized').count()
-
-            return JSONResponseSender.send_success(
-                data={
-                    'total_orders': total_orders,
-                    'total_revenue': total_revenue,
-                    'successful_payments': total_successful_payments,
-                    'successful_refunds': total_successful_refunds,
-                    'canceled_payments': total_canceled_payments,
-                    'authorized_payments': total_authorized_payments,
-                }
-            )
-        except Exception as e:
-            return JSONResponseSender.send_error(ErrorCodes.STATS_RETRIEVAL_FAILED,get_error_message(ErrorCodes.STATS_RETRIEVAL_FAILED),str(e))

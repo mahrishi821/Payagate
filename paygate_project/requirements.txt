@@ -13,5 +13,11 @@ pytest>=7.4.0
 pytest-django>=4.5.2
 pytest-cov>=4.1.0
 factory-boy>=3.3.0
-celery
+django-environ
+celery==5.4.0
+redis==5.2.1
+kombu==5.4.2
+vine==5.1.0
+requests
+gunicorn
 requests

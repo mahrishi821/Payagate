@@ -1,0 +1,103 @@
+# -----------------------------
+# Python / Virtual Environments
+# -----------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+*.eggs/
+.Python
+.env
+.venv/
+venv/
+ENV/
+env/
+pip-log.txt
+pip-wheel-metadata/
+wheels/
+
+# -----------------------------
+# Build / Cache / Logs
+# -----------------------------
+*.log
+*.pot
+*.pyc
+*.mo
+*.db
+*.sqlite3
+*.pid
+*.seed
+*.bak
+*.swp
+.cache/
+.mypy_cache/
+pytest_cache/
+coverage/
+htmlcov/
+dist/
+build/
+.eggs/
+*.manifest
+*.spec
+
+# -----------------------------
+# Environment / Secrets
+# -----------------------------
+.env
+*.env
+.env.*
+.envrc
+secrets.json
+*.pem
+*.key
+*.crt
+*.cert
+
+# -----------------------------
+# Version Control / IDE
+# -----------------------------
+.git/
+.gitignore
+.gitattributes
+.gitmodules
+.gitkeep
+.gitlab/
+.github/
+.idea/
+.vscode/
+*.code-workspace
+*.sublime*
+*.DS_Store
+Thumbs.db
+
+# -----------------------------
+# Docker / Deployment
+# -----------------------------
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# -----------------------------
+# Frontend / Node
+# -----------------------------
+node_modules/
+npm-debug.log
+yarn-error.log
+*.tsbuildinfo
+*.lock
+dist/
+build/
+.cache/
+*.map
+
+# -----------------------------
+# OS / Misc
+# -----------------------------
+*.tmp
+*.bak
+*.orig
+*.swp
+*~
